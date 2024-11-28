@@ -211,7 +211,13 @@ def Z_score_Normlisze(data, sub_nums = 31, ex_nums = 48):
     for i in range(sub_nums):
         l = i * ex_nums
         r = (i + 1) * ex_nums
-        data[l:r] = (data[l:r] - np.mean(data[l:r], axis=0)) / (np.std(data[l:r], axis=0) + 1e-9)
+        data[l:r] = (data[l:r] - np.mean(data[l:r], axis=0)) / (np.std(data[l:r], axis=0, ddof=1) + 1e-9)
+        # if len(data[l:r]) == 0:
+        #     print("ssdq")
+        # if data.shape[-1] == 119:
+        #     print(f"Person {i} mean: {np.mean(data[l:r], axis=0)}")
+        #     print(f"Person {i} std: {np.std(data[l:r], axis=0, ddof=1)}")
+        #     print(f"Person {i} data: {data[l:r]}")
     return data
 
 

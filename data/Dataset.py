@@ -142,9 +142,9 @@ class FeatureDataset(Dataset):
         for i, (train_indices, test_indices) in enumerate(kf.split(self.indices)):
             if i == current_split:
                 if mode == "train":
-                    self.split_data(train_indices)
+                    self.split_data(self.indices[train_indices])
                 elif mode == "test":
-                    self.split_data(test_indices)
+                    self.split_data(self.indices[test_indices])
                 else:
                     raise ValueError("mode should be 'train' or 'test'")
                 break
@@ -155,7 +155,7 @@ if __name__ == "__main__":
     subject_list = [i for i in range(1, 35) if i != 1 and i != 23 and i != 32]
     modalities = ["eeg", "eye", "au"]
     ruiwenFeatures = DataFeatures(
-        data_path, modalities=modalities, subject_lists=subject_list, Norm=None
+        data_path, modalities=modalities, subject_lists=subject_list, Norm="Z_score"
     )
     trainSet = FeatureDataset(
         ruiwenFeatures, mode="train", test_person=0, dependent=False

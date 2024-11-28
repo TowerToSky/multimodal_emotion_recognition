@@ -50,6 +50,7 @@ class DataFeatures(object):
         """
         self.data_path = data_path
         self.subject_lists = subject_lists
+        self.ex_nums = None
         rawData = RawData(
             data_path
         )  # 这么来看的话，一次加载，但数据量不大，并且数据组织形式是整体存储，而没有拆分
@@ -61,17 +62,21 @@ class DataFeatures(object):
             self.features[modality] = getattr(self, f"load_{modality}_features")(
                 rawData.data[modality]
             )
+            if self.ex_nums is None:
+                self.ex_nums = int(
+                    self.features[modality].shape[0] // len(self.subject_lists)
+                )
             if Norm == "Z_score":
                 self.features[modality] = utils.Z_score_Normlisze(
                     self.features[modality],
                     sub_nums=len(self.subject_lists),
-                    ex_nums=len(self.features[modality][0]),
+                    ex_nums=self.ex_nums,
                 )
             if Norm == "Min_Max":
                 self.features[modality] = utils.Min_Max_Normlisze(
                     self.features[modality],
                     sub_nums=len(self.subject_lists),
-                    ex_nums=len(self.features[modality][0]),
+                    ex_nums=self.ex_nums,
                 )
 
         assert "label" in rawData.data.keys(), "数据中不包含label"
@@ -232,6 +237,20 @@ class EyeFeatures:
         self.data_path = data_path
         self.eye_features = None  # 初始化特征缓存
 
+    def _normalize(self, features):
+        """
+        归一化特征
+
+        Args:
+            features (np.ndarray): 特征数组
+        Returns:
+            np.ndarray: 归一化后的特征
+        """
+        # 归一化
+        features = (features - np.mean(features)) / np.std(features)
+        features = (features - features.min()) / (features.max() - features.min())
+        return features
+
     def compute_eye_features(self, feature_dir_name="eye_track_feature"):
         """
         加载或计算眼动特征。
@@ -261,11 +280,12 @@ class EyeFeatures:
 
             # 加载特征文件
             subject_eye_features = np.load(eye_feature_path)
+            subject_eye_features = np.nan_to_num(subject_eye_features)  # 替换NaN值
+            subject_eye_features = self._normalize(subject_eye_features)
             eye_track_features.append(subject_eye_features)
 
         # 合并所有受试者的特征
         eye_track_features = np.concatenate(eye_track_features, axis=0)
-        eye_track_features = np.nan_to_num(eye_track_features)  # 替换NaN值
         print("眼动特征加载完成。")
 
         self.eye_features = eye_track_features
@@ -297,6 +317,44 @@ class AuFeatures:
         self.subject_lists = subject_lists
         self.data_path = data_path
         self.au_features = None  # 初始化特征缓存
+
+    def _normalize_au(self, au_features):
+        """
+        归一化AU特征
+
+        Args:
+            au_features (np.ndarray): AU特征数组
+        Returns:
+            np.ndarray: 归一化后的AU特征
+        """
+        # 归一化
+        au_features = (au_features - np.mean(au_features)) / np.std(au_features)
+        au_features = (au_features - au_features.min()) / (
+            au_features.max() - au_features.min()
+        )
+        return au_features
+
+    def _normalize(self, features):
+        """
+        归一化特征
+
+        Args:
+            features (np.ndarray): 特征数组
+        Returns:
+            np.ndarray: 归一化后的特征
+        """
+        # 每个AU点有7个特征，共17个AU点
+        n_au_points = 17
+        features_per_au = 7
+        # 对每个AU的7个特征进行独立归一化
+        for au_index in range(n_au_points):
+            # 获取当前AU的7个特征
+            start_idx = au_index * features_per_au
+            end_idx = (au_index + 1) * features_per_au
+            au_features = features[:, start_idx:end_idx]
+            # 归一化
+            features[:, start_idx:end_idx] = self._normalize_au(au_features)
+        return features
 
     def compute_au_features(self, feature_dir_name="au_feature"):
         """
@@ -355,7 +413,9 @@ if __name__ == "__main__":
     print(subject_list)
     modalities = ["eeg", "eye", "au"]
     ruiwenData = DataFeatures(
-        data_path, modalities=modalities, subject_lists=subject_list, Norm=None
+        data_path, modalities=modalities, subject_lists=subject_list, Norm="Z_score"
     )
     print(ruiwenData.features)
+    for modality in modalities:
+        print(modality, ruiwenData.features[modality].shape)
     pass

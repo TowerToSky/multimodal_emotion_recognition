@@ -9,7 +9,6 @@ from scipy import io
 import copy
 import torch
 
-
 def add_project_root_to_sys_path():
     """动态添加项目根目录到 sys.path"""
     project_root = Path(__file__).resolve().parent.parent
@@ -19,8 +18,18 @@ def add_project_root_to_sys_path():
 
 add_project_root_to_sys_path()
 
-from common.utils import find_nearest_folder
+from common.utils import find_nearest_folder, tensor_from_numpy
 
+def initialize_graph(config, data_len, device):
+    
+    """初始化图数据"""
+    adj, graph_indicator = createGraphStructer(
+        config=config, batch_size=data_len
+    )
+    adj = normalization(adj).to(device)
+    graph_indicator = tensor_from_numpy(graph_indicator, device)
+
+    return (adj, graph_indicator)
 
 def processing_adjacency(batch_size, ch_nums, save_path):
     single_adjacency = np.array([])

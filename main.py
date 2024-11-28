@@ -79,6 +79,9 @@ def parse_args():
         help="Resume training from the last checkpoint.",
     )
     parser.add_argument(
+        "--dependent", type=int, default=None, help="denpendent or indenpendent."
+    )
+    parser.add_argument(
         "--checkpoint", type=str, default=None, help="Path to the checkpoint file."
     )
     parser.add_argument(
@@ -96,11 +99,31 @@ def parse_args():
     )
     return parser.parse_args()
 
+
 def modify_config(config, args):
     """根据命令行参数修改配置"""
-    config['model'] = config['model'][args.model]
-    config['data'] = config['data'][args.data]
+    config["model"] = config["model"][args.model]
+    config["data"] = config["data"][args.data]
+
+    # 根据denpendent参数修改输出路径配置
+    if args.dependent is not None:
+        config["training"]["dependent"] = True if args.dependent == 1 else False
+
+    if config["training"]["dependent"]:
+        config["logging"]["model_dir"] = (
+            config["logging"]["model_dir"] + "/" + "dependent"
+        )
+        config["logging"]["log_dir"] = config["logging"]["log_dir"] + "/" + "dependent"
+    else:
+        config["logging"]["model_dir"] = (
+            config["logging"]["model_dir"] + "/" + "independent"
+        )
+        config["logging"]["log_dir"] = (
+            config["logging"]["log_dir"] + "/" + "independent"
+        )
+
     return config
+
 
 def prepare_environment(config):
     """准备环境，包括设置随机种子和设备"""
@@ -117,7 +140,7 @@ def load_data(config, test_person=-1):
         data_path=config["data"]["data_path"],
         modalities=config["data"]["modalities"],
         subject_lists=config["data"]["subject_lists"],
-        Norm=None,
+        Norm="Z_score",
     )
     train_dataset = FeatureDataset(
         data,
@@ -126,6 +149,7 @@ def load_data(config, test_person=-1):
         test_person=test_person,
         cls_num=config["num_classes"],
         dependent=config["training"]["dependent"],
+        n_splits=config["training"]["n_folds"],
     )
     test_dataset = FeatureDataset(
         data,
@@ -134,39 +158,21 @@ def load_data(config, test_person=-1):
         test_person=test_person,
         cls_num=config["num_classes"],
         dependent=config["training"]["dependent"],
+        n_splits=config["training"]["n_folds"],
     )
     train_loader = DataLoader(
         train_dataset,
         batch_size=config["training"]["batch_size"],
         shuffle=True,
         num_workers=config["data"]["num_workers"],
-        drop_last=True,
     )
     test_loader = DataLoader(
         test_dataset,
         batch_size=config["training"]["batch_size"],
         shuffle=False,
         num_workers=config["data"]["num_workers"],
-        drop_last=False,
     )
     return train_loader, test_loader
-
-
-def initialize_graph(config, train_len, test_len, device):
-    """初始化图数据"""
-    train_adj, train_graph_indicator = createGraphStructer(
-        config=config, batch_size=train_len
-    )
-    train_adj = normalization(train_adj).to(device)
-    train_graph_indicator = tensor_from_numpy(train_graph_indicator, device)
-
-    test_adj, test_graph_indicator = createGraphStructer(
-        config=config, batch_size=test_len
-    )
-    test_adj = normalization(test_adj).to(device)
-    test_graph_indicator = tensor_from_numpy(test_graph_indicator, device)
-
-    return (train_adj, train_graph_indicator), (test_adj, test_graph_indicator)
 
 
 def initialize_model(config, device):
@@ -180,15 +186,6 @@ def run(config, logger, device, test_person):
     # 加载数据
     train_loader, test_loader = load_data(config, test_person=test_person)
 
-    # 初始化图数据
-    (train_adj, train_graph_indicator), (test_adj, test_graph_indicator) = (
-        initialize_graph(
-            config["data"],
-            config["training"]["batch_size"],
-            len(test_loader.dataset),
-            device,
-        )
-    )
     # 初始化模型
     model = initialize_model(config, device)
 
@@ -234,10 +231,8 @@ def run(config, logger, device, test_person):
     # 开始训练
     trainer.train(
         num_epochs=config["training"]["epochs"],
-        train_adj=train_adj,  # 可根据需要传递额外的图数据
-        train_graph_indicator=train_graph_indicator,
-        test_adj=test_adj,
-        test_graph_indicator=test_graph_indicator,
+        data_config=config["data"],
+        test_person=test_person,
     )
 
     # 保存最终模型
@@ -255,6 +250,8 @@ def main():
     # 加载配置文件
     config = load_config(args.config)
 
+    config = modify_config(config, args)
+
     # 初始化日志器和 Metrics
     logger = TensorBoardLogger(config["logging"]["log_dir"])
 
@@ -263,7 +260,7 @@ def main():
 
     # 运行主函数
     if config["training"]["dependent"]:
-        for fold in range(config["training"]["n_splits"]):
+        for fold in range(config["training"]["n_folds"]):
             run(config, logger, device, fold)
     else:
         for test_person in range(len(config["data"]["subject_lists"])):

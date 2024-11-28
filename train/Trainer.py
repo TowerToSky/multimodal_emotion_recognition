@@ -25,6 +25,7 @@ def add_project_root_to_sys_path():
 add_project_root_to_sys_path()
 from tools.logger import TensorBoardLogger
 from tools.metrics import Metrics
+from common.process_graph import initialize_graph
 
 
 class Trainer:
@@ -70,7 +71,9 @@ class Trainer:
         self.test_loss_history = []
         self.train_acc_history = []
         self.test_acc_history = []
+        self.best_test_acc = float("inf")
         self.best_test_loss = float("inf")
+        self.best_test_f1 = float("inf")
 
     def _process_input(self, inputs):
         """处理输入数据，确保其正确放到设备上，并且转换成torch.float32"""
@@ -128,7 +131,7 @@ class Trainer:
             # )
 
         self.logger.info(
-            f"Epoch {epoch+1}: "
+            f"Person {test_person}: Epoch {epoch+1}: "
             f"Train Loss={avg_train_loss:.4f}, Train Acc={train_acc:.4f}, Train F1={train_f1:.4f}, "
             f"Val Loss={avg_test_loss:.4f}, Val Acc={test_acc:.4f}, Val F1={test_f1:.4f}"
         )
@@ -170,14 +173,12 @@ class Trainer:
     def train(
         self,
         num_epochs,
-        train_adj,
-        train_graph_indicator,
-        test_adj,
-        test_graph_indicator,
+        data_config,
         test_person=0,
     ):
         """训练模型"""
         self.logger.info("Start training...")
+        batch_size = self.train_loader.batch_size
         for epoch in range(num_epochs):
             # 重置 Metrics
             self.metrics.reset()
@@ -187,13 +188,21 @@ class Trainer:
             test_loss = []
             test_acc = []
 
+            # 初始化图数据
+            adj, graph_indicator = initialize_graph(
+                data_config, batch_size, self.device
+            )
             # Training loop
             for inputs, targets in tqdm(
-                self.train_loader, desc=f"Epoch {epoch+1}/{num_epochs} - Training"
+                self.train_loader,
+                desc=f"Person {test_person}: Epoch {epoch+1}/{num_epochs} - Training",
             ):
-                loss, acc = self.train_step(
-                    inputs, targets, train_adj, train_graph_indicator
-                )
+                if len(targets) != graph_indicator[-1]:
+                    adj, graph_indicator = initialize_graph(
+                        data_config, len(targets), self.device
+                    )
+
+                loss, acc = self.train_step(inputs, targets, adj, graph_indicator)
                 train_loss.append(loss)
                 train_acc.append(acc)
 
@@ -210,9 +219,11 @@ class Trainer:
             for inputs, targets in tqdm(
                 self.test_loader, desc=f"Epoch {epoch+1}/{num_epochs} - Validation"
             ):
-                loss, acc = self.test_step(
-                    inputs, targets, test_adj, test_graph_indicator
-                )
+                if len(targets) != graph_indicator[-1]:
+                    adj, graph_indicator = initialize_graph(
+                        data_config, len(targets), self.device
+                    )
+                loss, acc = self.test_step(inputs, targets, adj, graph_indicator)
                 test_loss.append(loss)
                 test_acc.append(acc)
 
@@ -247,10 +258,12 @@ class Trainer:
                 )
 
             # Save checkpoint if testidation loss improves
-            if avg_test_loss < self.best_test_loss:
+            if test_acc < self.best_test_acc:
+                self.best_test_acc = test_acc
                 self.best_test_loss = avg_test_loss
+                self.best_test_f1 = test_f1
                 self.logger.info(
-                    f"Person {test_person} best test loss: {self.best_test_loss:.4f}"
+                    f"Person {test_person} best test acc: {self.best_test_acc:.4f}, test loss: {avg_test_loss:.4f}, f1 score: {test_f1:.4f}"
                 )
                 best_checkpoint_path = (
                     Path(self.logger.log_path).parent
@@ -258,6 +271,10 @@ class Trainer:
                     / f"best_checkpoint_{test_person}.pth"
                 )
                 self.save_checkpoint(best_checkpoint_path)
+        # 打印最终结果
+        self.logger.info(
+            f"Person {test_person} final best test acc: {self.best_test_acc:.4f}, test loss: {self.best_test_loss:.4f}, f1 score: {self.best_test_f1:.4f}"
+        )
 
     def save_checkpoint(self, path):
         """保存模型和优化器的状态"""
