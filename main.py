@@ -11,6 +11,7 @@ import os
 import sys
 import yaml
 from pathlib import Path
+import pandas as pd
 
 
 def add_project_root_to_sys_path():
@@ -22,13 +23,9 @@ def add_project_root_to_sys_path():
 
 add_project_root_to_sys_path()
 
-from argparse import ArgumentParser
 from torch.utils.data import DataLoader
 from torch.optim import Adam
-from torch.optim.lr_scheduler import StepLR
-from torch.nn import CrossEntropyLoss
 from tools.logger import TensorBoardLogger
-from tools.metrics import Metrics
 from train.Trainer import Trainer
 import argparse
 import torch
@@ -41,18 +38,14 @@ from data.LoadFeatures import DataFeatures
 from data.Dataset import FeatureDataset
 from train.Trainer import Trainer
 from tools.logger import TensorBoardLogger
-from tools.metrics import Metrics
 from common.utils import (
     load_config,
     seed_all,
-    tensor_from_numpy,
+    normalize_cm,
 )  # 假设有一个工具函数来加载配置文件
 
-# 图结构函数
-from common.process_graph import createGraphStructer, normalization
 
-
-def parse_args():
+def parse_args(args=None):
     """解析命令行参数"""
     parser = argparse.ArgumentParser(description="Train and etestuate a model.")
     parser.add_argument(
@@ -82,6 +75,12 @@ def parse_args():
         "--dependent", type=int, default=None, help="denpendent or indenpendent."
     )
     parser.add_argument(
+        "--num_classes", type=int, default=None, help="Number of classes."
+    )
+    parser.add_argument(
+        "--using_modality", type=str, default=None, help="Using modality."
+    )
+    parser.add_argument(
         "--checkpoint", type=str, default=None, help="Path to the checkpoint file."
     )
     parser.add_argument(
@@ -97,6 +96,9 @@ def parse_args():
         default=None,
         help="Input for inference (required in infer mode).",
     )
+    if args is not None:
+        return parser.parse_args(args)
+    
     return parser.parse_args()
 
 
@@ -104,6 +106,43 @@ def modify_config(config, args):
     """根据命令行参数修改配置"""
     config["model"] = config["model"][args.model]
     config["data"] = config["data"][args.data]
+    config["num_classes"] = (
+        args.num_classes if args.num_classes is not None else config["num_classes"]
+    )
+    config["model"]["classifier"]["nb_classes"] = config["num_classes"]
+
+    using_modality = None
+    if args.using_modality is not None:
+        using_modality = args.using_modality
+        using_modality = "".join(using_modality)
+        using_modality = using_modality.split(",")
+        using_modality = [
+            modality.strip(" ")
+            for modality in using_modality
+            if len(modality.strip(" ")) > 0
+        ]
+
+    # 根据模态修改输入维度
+    input_size = config["data"]["input_size"]
+    new_input_size = []
+    if using_modality is not None:
+        for modality in using_modality:
+            if modality == "eeg":
+                new_input_size.append(input_size[0])
+            elif modality == "eye":
+                new_input_size.append(input_size[1])
+            elif modality == "au":
+                new_input_size.append(input_size[2])
+        config["data"]["modalities"] = using_modality
+        config["data"]["input_size"] = new_input_size
+        config["model"]["feature_align"]["input_size"] = new_input_size
+        d_model = config["model"]["fusion"]["d_model"]
+        if len(using_modality) > 1:
+            config["model"]["fusion"]["d_model"] = d_model * 4
+            config["model"]["attention_encoder"]["d_model"] = d_model * 4
+
+    print(config["data"]["input_size"])
+    print(config["data"]["modalities"])
 
     # 根据denpendent参数修改输出路径配置
     if args.dependent is not None:
@@ -182,7 +221,66 @@ def initialize_model(config, device):
     return model
 
 
-def run(config, logger, device, test_person):
+def save_history(history):
+    """保存训练历史到文件"""
+    # 确定混淆矩阵的大小
+    row = []
+    for subject, data in history.items():
+        cm = data["cm"]
+        cm_str = ",".join([str(i) for i in cm])
+        row.append(
+            [
+                subject,
+                data["epoch"],
+                data["acc"],
+                data["loss"],
+                data["f1-score"],
+                cm_str,
+            ]
+        )
+
+    # 添加Mean和Std
+    row.append(
+        [
+            "Mean",
+            "",
+            sum([i[2] for i in row]) / len(row),
+            sum([i[3] for i in row]) / len(row),
+            sum([i[4] for i in row]) / len(row),
+            "",
+        ]
+    )
+    row.append(
+        [
+            "Std",
+            "",
+            sum([(i[2] - row[-1][2]) ** 2 for i in row]) / len(row),
+            sum([(i[3] - row[-1][3]) ** 2 for i in row]) / len(row),
+            sum([(i[4] - row[-1][4]) ** 2 for i in row]) / len(row),
+            "",
+        ]
+    )
+    df = pd.DataFrame(
+        row,
+        columns=["subject", "epoch", "acc", "loss", "f1-score", "cm"],
+    )
+    # df.to_excel(path, index=False)
+    return df
+
+
+def record_history(config, history, path):
+    metric_df = save_history(history)
+
+    # TODO
+
+
+def dict_format(config):
+    # 将config字典格式化为字符串
+    config_str = yaml.dump(config, default_flow_style=False)
+    return config_str
+
+
+def run(config, logger, device, test_person, history, mode="train"):
     # 加载数据
     train_loader, test_loader = load_data(config, test_person=test_person)
 
@@ -229,18 +327,25 @@ def run(config, logger, device, test_person):
         logger.info(f"Model:{model}")
 
     # 开始训练
-    trainer.train(
-        num_epochs=config["training"]["epochs"],
-        data_config=config["data"],
-        test_person=test_person,
-    )
+    if mode == "train":
 
-    # 保存最终模型
-    trainer.save_checkpoint(
-        Path(config["logging"]["model_dir"])
-        / f"checkpoint_{logger.timestamp}"
-        / f"checkpoint_{test_person}_{config['training']['epochs']}.pth"
-    )
+        trainer.train(
+            num_epochs=config["training"]["epochs"],
+            data_config=config["data"],
+            test_person=test_person,
+        )
+
+        # 保存最终模型
+        trainer.save_checkpoint(
+            Path(config["logging"]["model_dir"])
+            / f"checkpoint_{logger.timestamp}"
+            / f"checkpoint_{test_person}_{config['training']['epochs']}.pth"
+        )
+    elif mode == "infer":
+        trainer.infer(config["data"], test_person)
+
+    # 训练结果输出到文件中
+    history.update(trainer.history)
 
 
 def main():
@@ -257,14 +362,28 @@ def main():
 
     # 准备环境
     device = prepare_environment(config)
+    # device = 'cpu'
+
+    history = dict()
 
     # 运行主函数
     if config["training"]["dependent"]:
         for fold in range(config["training"]["n_folds"]):
-            run(config, logger, device, fold)
+            run(config, logger, device, fold, history, mode="train")
     else:
         for test_person in range(len(config["data"]["subject_lists"])):
-            run(config, logger, device, test_person)
+            run(config, logger, device, test_person, history, mode="train")
+
+    save_history(
+        history,
+        path=Path(config["logging"]["log_dir"])
+        / logger.timestamp
+        / f"history_res.xlsx",
+    )
+
+    logger.info(
+        f"History saved to {Path(config['logging']['log_dir'])/ logger.timestamp / f'history_res.xlsx'}"
+    )
 
     # 关闭日志器
     logger.close()

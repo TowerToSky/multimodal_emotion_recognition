@@ -138,7 +138,9 @@ def modify_cfg(cfg, args):
         using_modality = args.using_modality
         using_modality = "".join(using_modality)
         using_modality = using_modality.split(",")
-        using_modality = [modality.strip(' ') for modality in using_modality if modality]
+        using_modality = [
+            modality.strip(" ") for modality in using_modality if modality
+        ]
         cfg["USING_MODALITY"] = using_modality
 
     # prompt setting
@@ -201,7 +203,8 @@ def normlize_data_np(data):
     )
     return scaled_data
 
-def Z_score_Normlisze(data, sub_nums = 31, ex_nums = 48):
+
+def Z_score_Normlisze(data, sub_nums=31, ex_nums=48):
     """
     Z-score Normalization
     旨在对于每个人做Z-score标准化以去除个体差异性
@@ -211,7 +214,9 @@ def Z_score_Normlisze(data, sub_nums = 31, ex_nums = 48):
     for i in range(sub_nums):
         l = i * ex_nums
         r = (i + 1) * ex_nums
-        data[l:r] = (data[l:r] - np.mean(data[l:r], axis=0)) / (np.std(data[l:r], axis=0, ddof=1) + 1e-9)
+        data[l:r] = (data[l:r] - np.mean(data[l:r], axis=0)) / (
+            np.std(data[l:r], axis=0, ddof=1) + 1e-9
+        )
         # if len(data[l:r]) == 0:
         #     print("ssdq")
         # if data.shape[-1] == 119:
@@ -219,7 +224,6 @@ def Z_score_Normlisze(data, sub_nums = 31, ex_nums = 48):
         #     print(f"Person {i} std: {np.std(data[l:r], axis=0, ddof=1)}")
         #     print(f"Person {i} data: {data[l:r]}")
     return data
-
 
 
 def seed_all(seed=42):
@@ -318,7 +322,7 @@ class Myreport:
     def __init__(self):
         self.__confusion = None
 
-    def __statistics_confusion(self, y_true, y_predict, num_cls = 5):
+    def __statistics_confusion(self, y_true, y_predict, num_cls=5):
         self.__confusion = np.zeros((num_cls, num_cls))
         for i in range(y_true.shape[0]):
             self.__confusion[y_predict[i]][y_true[i]] += 1
@@ -361,7 +365,6 @@ class Myreport:
         return F1score
 
 
-
 # 新添加的一些小utiles
 def find_nearest_folder(path):
     """
@@ -380,3 +383,16 @@ def find_nearest_folder(path):
             raise ValueError("无法找到有效的文件夹路径")
     return path
 
+
+def normalize_cm(cm):
+    # Normalize
+    cm = np.array(cm)
+    cm = cm.T
+    cm = cm.astype("float") / cm.sum(axis=1)[:, np.newaxis]
+
+    # Cells that account for less than 1%, set to 0
+    for i in range(cm.shape[0]):
+        for j in range(cm.shape[1]):
+            if int(cm[i, j] * 100 + 0.5) == 0:
+                cm[i, j] = 0
+    return cm

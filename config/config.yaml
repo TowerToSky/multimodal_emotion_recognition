@@ -12,9 +12,10 @@ model:
     fusion:
       embed_dim: *feature_extract_hidden_dim  # 引用 hidden_dim
       num_heads: 8
+      d_model: *feature_extract_hidden_dim
     attention_encoder:
       num_layers: 6
-      d_model: 640  # 由于不能在 YAML 中进行算术计算，这里直接写结果
+      d_model: *feature_extract_hidden_dim  # 由于不能在 YAML 中进行算术计算，这里直接写结果
       num_heads: 8
       d_ff: 2048
       dropout: 0.1
@@ -31,7 +32,7 @@ training:
   weight_decay: 0.002
   optimizer: "adam"
   loss_function: "cross_entropy"
-  dependent: True
+  dependent: False
   n_folds: 10
 
 data:
@@ -55,4 +56,4 @@ device:
   gpu_ids: [0]
 
 seed: 42
-num_classes: 2
+num_classes: 4

@@ -42,8 +42,8 @@ class Metrics:
         self.targets.extend(targets.cpu().numpy())
 
         # 更新混淆矩阵
-        # cm = confusion_matrix(targets.cpu().numpy(), predicted.cpu().numpy(), labels=range(self.num_classes))
-        # self.conf_matrix += cm
+        cm = confusion_matrix(targets.cpu().numpy(), predicted.cpu().numpy(), labels=range(self.num_classes))
+        self.conf_matrix += cm
 
     def get_accuracy(self):
         """计算准确率"""

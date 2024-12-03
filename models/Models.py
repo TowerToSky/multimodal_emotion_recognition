@@ -195,9 +195,10 @@ class AFFM(nn.Module):
     def __init__(self, cfg=None):  # 暂时不考虑多头注意力机制
         super(AFFM, self).__init__()
         self.embed_dim = cfg["embed_dim"]
+        self.d_model = cfg["d_model"]
 
         self.attention = Attention(self.embed_dim, num_heads=cfg["num_heads"])
-        self.fn = nn.Linear(self.embed_dim * 4, self.embed_dim * 4)
+        self.fn = nn.Linear(self.d_model, self.d_model)
 
     def MI(self, f, view):
         """
@@ -221,12 +222,20 @@ class AFFM(nn.Module):
         Returns:
             输出数据
         """
-        eeg = input_list[0]
-        eye = input_list[1]
-        au = input_list[2]
+        if len(input_list) == 3:
+            a = input_list[0]
+            b = input_list[1]
+            c = input_list[2]
+            x_1 = torch.concat([a, self.attention(a, b) + self.MI(b, a)], dim=2)
+            x_2 = torch.concat([a, self.attention(a, c) + self.MI(c, a)], dim=2)
+        elif len(input_list) == 2:
+            a = input_list[0]
+            b = input_list[1]
+            x_1 = torch.concat([a, self.attention(a, b) + self.MI(b, a)], dim=2)
+            x_2 = torch.concat([b, self.attention(b, a) + self.MI(a, b)], dim=2)
+        else:
+            return input_list[0]
 
-        x_1 = torch.concat([eeg, self.attention(eeg, eye) + self.MI(eye, eeg)], dim=2)
-        x_2 = torch.concat([eeg, self.attention(eeg, au) + self.MI(au, eeg)], dim=2)
         x = torch.concat([x_1, x_2], dim=2)
         x = self.fn(x)
         return x
