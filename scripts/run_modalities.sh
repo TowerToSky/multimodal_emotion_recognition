@@ -12,8 +12,9 @@ generate_combinations() {
         if [ -n "$prefix" ]; then
             for cls_num in 2 4
             do
-                for dependent in 0 1
+                for dependent in 0 #1
                 do
+                    sleep 2
                     echo "Modality: $prefix, Num Classes: $cls_num, Dependent: $dependent"
                     /home/yihaoyuan/miniconda3/envs/torch/bin/python $DIR/../main.py \
                     --data "Ruiwen" \

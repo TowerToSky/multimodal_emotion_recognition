@@ -19,19 +19,19 @@ class TensorBoardLogger:
 
         self.timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         self.timestamp = str(self.timestamp)
-        log_dir = os.path.join(log_dir, self.timestamp)
-        if not os.path.exists(log_dir):
-            os.makedirs(log_dir)
+        log_path = os.path.join(log_dir, self.timestamp)
+        if not os.path.exists(log_path):
+            os.makedirs(log_path)
         else:
             # timestamp already exists, add a suffix
             self.timestamp = self.timestamp + "_1"
-            log_dir = os.path.join(log_dir, self.timestamp)
-            os.makedirs(log_dir, exist_ok=True)
+            log_path = os.path.join(log_dir, self.timestamp)
+            os.makedirs(log_path, exist_ok=True)
 
         # Set up log file
         if log_file is None:
             log_file = f"log_{self.timestamp}.txt"
-        self.log_path = os.path.join(log_dir, log_file)
+        self.log_path = os.path.join(log_path, log_file)
 
         # Configure text logger
         self.logger = logging.getLogger(__name__)
@@ -56,7 +56,7 @@ class TensorBoardLogger:
         self.logger.addHandler(file_handler)
 
         # TensorBoard writer
-        self.writer = SummaryWriter(log_dir=log_dir)
+        self.writer = SummaryWriter(log_dir=log_path)
 
     def log_scalar(self, tag, value, step):
         """Log a scalar value to TensorBoard."""

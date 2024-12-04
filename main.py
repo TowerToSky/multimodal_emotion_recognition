@@ -314,7 +314,7 @@ def main():
         for fold in range(config["training"]["n_folds"]):
             run(config, logger, device, fold, history, mode="train")
     else:
-        for test_person in range(len(config["data"]["subject_lists"]) - 28):
+        for test_person in range(len(config["data"]["subject_lists"])):
             run(config, logger, device, test_person, history, mode="train")
 
     # 保存训练历史到文件
