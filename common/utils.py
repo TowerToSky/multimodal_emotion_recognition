@@ -12,154 +12,8 @@ import pandas as pd
 import scipy.sparse as sp
 from scipy import io
 import copy
-
-
-def set_args():
-    parser = argparse.ArgumentParser(description="Experimate of GNN")
-    parser.add_argument(
-        "--dataset", type=str, default="Ruiwen", help="The dataset you want to use"
-    )
-    parser.add_argument("--model", type=str, default="G-EMAFFM", help="The model name")
-    parser.add_argument(
-        "--num_classes", type=int, default=2, help="The number of classes"
-    )
-    parser.add_argument("--n_fold", type=int, default=10, help="The number of fold")
-    parser.add_argument(
-        "--dependent", type=int, default=0, help="Whether the dataset is dependent"
-    )
-    parser.add_argument(
-        "--en_num", type=int, default=6, help="The number of encoder layers"
-    )
-    parser.add_argument(
-        "--de_num", type=int, default=6, help="The number of decoder layers"
-    )
-    parser.add_argument("--seq_len", type=int, default=10, help="seq length")
-    parser.add_argument(
-        "--embed_dim", type=int, default=160, help="The dimension of embedding"
-    )
-    parser.add_argument(
-        "--device", type=str, default="cuda", help="The device you want to use"
-    )
-    parser.add_argument(
-        "--tok", type=float, default=0.5, help="The tok you want to use"
-    )
-    parser.add_argument(
-        "--nowtime",
-        type=str,
-        default=time.strftime("%Y%m%d_%H%M", time.localtime(time.time())),
-        help="The time you want to use",
-    )
-    parser.add_argument(
-        "--loadtime",
-        type=str,
-        default=None,
-    )
-    parser.add_argument(
-        "--repeat", type=int, default=1, help="Model Training Repeat NUM"
-    )
-    parser.add_argument("--epochs", type=int, default=500, help="The number of epochs")
-    parser.add_argument(
-        "--using_modality",
-        type=list,
-        default=None,
-        help="The modality you want to use",
-    )
-
-    parser.add_argument(
-        "--is_tired",
-        action="store_true",
-        help="Whether the subject is tired",
-    )
-
-    # missing prompt setting
-    parser.add_argument(
-        "--missing", action="store_true", help="Whether to use missing data"
-    )
-    parser.add_argument(
-        "--prompt_layers",
-        type=str,
-        default="0, 1, 3, 5",
-        help="Which layer to use prompt",
-    )
-    parser.add_argument(
-        "--prompt_length",
-        type=int,
-        default=4,
-        help="The length of prompt",
-    )
-
-    # parser.add_argument("--log_path", type=str, default=None, help="The path of log")
-    # parser.add_argument("--res_path", type=str, default=None, help="The path of res")
-    # parser.add_argument(
-    #     "--save_model_path", type=str, default=None, help="The path of saved model"
-    # )
-    parser.add_argument(
-        "--use_args", action="store_true", help="Whether to use the args"
-    )
-    args = parser.parse_args()
-
-    return args
-
-
-def load_config(cfg_path):
-    if cfg_path is None:
-        cfg_path = "config.yaml"
-    with open(
-        cfg_path,
-        "r",
-    ) as f:
-        cfg = yaml.load(f, Loader=yaml.FullLoader)
-    return cfg
-
-
-def modify_cfg(cfg, args):
-    cfg["USEING_DATASET"] = args.dataset
-    cfg["NUM_CLASSES"] = args.num_classes
-    # cfg["N_FOLD"] = args.n_fold
-    cfg["DEPENDENT"] = bool(args.dependent)
-    cfg["DEVICE"] = args.device
-    # cfg["TOK"] = args.tok
-    # cfg["REPEAT"] = args.repeat
-    # cfg["HIDDEN_DIM"] = args.embed_dim
-    cfg["EPOCHS"] = args.epochs
-    cfg["SEQ_LEN"] = args.seq_len
-    # cfg["LAYER_NUM"] = args.layer_num
-    cfg["NOWTIME"] = args.nowtime
-    if cfg["NOWTIME"] == "Test":
-        cfg["Phases"] = "Test"
-    else:
-        cfg["Phases"] = "Train"
-
-    cfg["is_tired"] = args.is_tired
-    cfg["EN_NUM"] = args.en_num
-    cfg["DE_NUM"] = args.de_num
-
-    if args.using_modality is not None:
-        using_modality = args.using_modality
-        using_modality = "".join(using_modality)
-        using_modality = using_modality.split(",")
-        using_modality = [
-            modality.strip(" ") for modality in using_modality if modality
-        ]
-        cfg["USING_MODALITY"] = using_modality
-
-    # prompt setting
-    # cfg["PROMPT_LAYERS"] = [int(i) for i in args.prompt_layers.split(",")]
-    # cfg["PROMPT_LENGTH"] = args.prompt_length
-    cfg["MISSING"] = args.missing
-
-    # if args.loadtime is not None:
-    #     cfg["LOADTIME"] = args.loadtime
-
-    # # file setting
-    # if args.log_path is not None:
-    #     cfg["LOG_ROOT"] = args.log_path
-
-    # if args.res_path is not None:
-    #     cfg["OUT_ROOT"] = args.res_path
-
-    # if args.save_model_path is not None:
-    #     cfg["SAVE_ROOT"] = args.save_model_path
+from pathlib import Path
+import re
 
 
 def confusion_matrix(preds, labels, conf_matrix):
@@ -217,12 +71,6 @@ def Z_score_Normlisze(data, sub_nums=31, ex_nums=48):
         data[l:r] = (data[l:r] - np.mean(data[l:r], axis=0)) / (
             np.std(data[l:r], axis=0, ddof=1) + 1e-9
         )
-        # if len(data[l:r]) == 0:
-        #     print("ssdq")
-        # if data.shape[-1] == 119:
-        #     print(f"Person {i} mean: {np.mean(data[l:r], axis=0)}")
-        #     print(f"Person {i} std: {np.std(data[l:r], axis=0, ddof=1)}")
-        #     print(f"Person {i} data: {data[l:r]}")
     return data
 
 
@@ -294,27 +142,6 @@ def plot_res(subject_acc, cfg, save_dir=None):
     plt.close()
 
 
-def echo_res_to_csv(cfg, acc):
-    # check cfg whether have list
-    for key in cfg.keys():
-        if isinstance(cfg[key], list):
-            cfg[key] = "_".join([str(i) for i in cfg[key]])
-
-    # append acc
-    for i in range(len(acc)):
-        cfg["person_" + str(i)] = acc[i]
-    cfg["mean"] = np.mean(acc)
-    cfg["std"] = np.std(acc)
-
-    # save to csv
-    csv_path = os.path.join(cfg["OUT_ROOT"], cfg["USEING_DATASET"], cfg["RES_CSV"])
-    df = pd.DataFrame(cfg, index=[0])
-    if os.path.exists(csv_path):
-        df.to_csv(csv_path, mode="a", header=False, index=False)
-    else:
-        df.to_csv(csv_path, index=False)
-
-
 import numpy as np
 
 
@@ -384,6 +211,17 @@ def find_nearest_folder(path):
     return path
 
 
+def load_config(cfg_path):
+    if cfg_path is None:
+        cfg_path = "config.yaml"
+    with open(
+        cfg_path,
+        "r",
+    ) as f:
+        cfg = yaml.load(f, Loader=yaml.FullLoader)
+    return cfg
+
+
 def normalize_cm(cm):
     # Normalize
     cm = np.array(cm)
@@ -396,3 +234,148 @@ def normalize_cm(cm):
             if int(cm[i, j] * 100 + 0.5) == 0:
                 cm[i, j] = 0
     return cm
+
+
+def dict_format(dic, parent_key=""):
+    """
+    递归方式拆解字典，将嵌套字典的key拼接起来形成单个key
+    """
+    items = []
+    for k, v in dic.items():
+        new_key = f"{parent_key}.{k}" if parent_key else k
+        if isinstance(v, dict):
+            items.extend(dict_format(v, new_key).items())
+        elif isinstance(v, list):
+            items.append((new_key, ",".join([str(i) for i in v])))
+        else:
+            items.append((new_key, v))
+    return dict(items)
+
+
+def parse_cm(cm_str):
+    """
+    解析混淆矩阵字符串并转换为二维数组（numpy数组形式方便后续计算）
+    """
+    sub_lists_str = re.sub(r"^\[|\]$", "", cm_str).split("],[")
+    cm = np.array(
+        [
+            list(map(int, re.findall(r"\d+", sub_list_str)))
+            for sub_list_str in sub_lists_str
+        ]
+    )
+    return cm
+
+
+def history2df(history):
+    """保存训练历史到DataFrame"""
+    rows = []
+
+    # 预计算均值和标准差
+    epoch_vals = [data["epoch"] for data in history.values()]
+    acc_vals = [data["acc"] for data in history.values()]
+    loss_vals = [data["loss"] for data in history.values()]
+    f1_vals = [data["f1-score"] for data in history.values()]
+
+    for subject, data in history.items():
+        cm_str = ",".join(map(str, data["cm"].flatten()))
+        rows.append(
+            [
+                subject,
+                data["epoch"],
+                data["acc"],
+                data["loss"],
+                data["f1-score"],
+                cm_str,
+            ]
+        )
+
+    # 添加Mean和Std
+    rows.append(
+        [
+            "Mean",
+            np.mean(epoch_vals),
+            np.mean(acc_vals),
+            np.mean(loss_vals),
+            np.mean(f1_vals),
+            None,
+        ]
+    )
+    rows.append(
+        [
+            "Std",
+            np.std(epoch_vals),
+            np.std(acc_vals),
+            np.std(loss_vals),
+            np.std(f1_vals),
+            None,
+        ]
+    )
+
+    # 创建DataFrame
+    history_df = pd.DataFrame(
+        rows, columns=["subject", "epoch", "acc", "loss", "f1-score", "cm"]
+    )
+    return history_df
+
+
+def save_history(config, data_name, timestamp, history):
+    """保存训练历史到文件"""
+    save_dir = Path(config["logging"]["log_dir"])
+    os.makedirs(save_dir, exist_ok=True)
+
+    # 配置字典转换成DataFrame
+    new_config = dict_format(config.copy())
+
+    # 将timestamp移到最前面
+    new_config["timestamp"] = timestamp
+    new_config = {"timestamp": new_config["timestamp"], **new_config}
+
+    # 字典转换成DataFrame
+    config_df = pd.DataFrame(new_config, index=[0])
+
+    # 转换历史metric数据为DataFrame
+    metric_df = history2df(history)
+
+    # 合并所有的混淆矩阵
+    cm_series = metric_df["cm"].dropna().apply(parse_cm)
+    cm_total = np.sum(cm_series.values, axis=0)  # 高效地计算总混淆矩阵
+    cm_str = np.array2string(cm_total, separator=",")
+
+    # 格式化 acc 和 f1-score
+    metric_df = metric_df.drop(columns=["epoch", "loss", "cm"]).set_index("subject").T
+    metric_df = metric_df.applymap(lambda x: f"{x:.4f}")
+    combined_row = metric_df.loc["acc"] + "/" + metric_df.loc["f1-score"]
+
+    # 合并DataFrame
+    new_df = pd.DataFrame([combined_row], index=["acc/f1-score"]).reset_index(drop=True)
+    config_df = pd.concat([config_df, new_df], axis=1)
+    config_df["cm"] = cm_str
+
+    # 保存历史数据
+    history_files = [
+        os.path.join(save_dir, f)
+        for f in os.listdir(save_dir)
+        if f.startswith("history")
+    ]
+    file_exists = False
+    save_path = None
+    for file_path in history_files:
+        old_df = pd.read_csv(file_path)
+        if old_df.columns.astype(str).equals(config_df.columns.astype(str)):
+            config_df.to_csv(file_path, mode="a", header=False, index=False)
+            save_path = file_path
+            file_exists = True
+            break
+    folds = None
+    if config["training"]["dependent"]:
+        folds = config["training"]["n_folds"]
+    else:
+        folds = len(config["data"]["subject_lists"])
+
+    if not file_exists:
+        save_path = os.path.join(
+            save_dir, f"history_{data_name}_{folds}_{len(history_files)}.csv"
+        )
+        config_df.to_csv(save_path, index=False)
+
+    return save_path

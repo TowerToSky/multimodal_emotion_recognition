@@ -41,7 +41,7 @@ from tools.logger import TensorBoardLogger
 from common.utils import (
     load_config,
     seed_all,
-    normalize_cm,
+    save_history,
 )  # 假设有一个工具函数来加载配置文件
 
 
@@ -98,7 +98,7 @@ def parse_args(args=None):
     )
     if args is not None:
         return parser.parse_args(args)
-    
+
     return parser.parse_args()
 
 
@@ -121,6 +121,8 @@ def modify_config(config, args):
             for modality in using_modality
             if len(modality.strip(" ")) > 0
         ]
+    else:
+        using_modality = config["data"]["modalities"]
 
     # 根据模态修改输入维度
     input_size = config["data"]["input_size"]
@@ -221,65 +223,6 @@ def initialize_model(config, device):
     return model
 
 
-def save_history(history):
-    """保存训练历史到文件"""
-    # 确定混淆矩阵的大小
-    row = []
-    for subject, data in history.items():
-        cm = data["cm"]
-        cm_str = ",".join([str(i) for i in cm])
-        row.append(
-            [
-                subject,
-                data["epoch"],
-                data["acc"],
-                data["loss"],
-                data["f1-score"],
-                cm_str,
-            ]
-        )
-
-    # 添加Mean和Std
-    row.append(
-        [
-            "Mean",
-            "",
-            sum([i[2] for i in row]) / len(row),
-            sum([i[3] for i in row]) / len(row),
-            sum([i[4] for i in row]) / len(row),
-            "",
-        ]
-    )
-    row.append(
-        [
-            "Std",
-            "",
-            sum([(i[2] - row[-1][2]) ** 2 for i in row]) / len(row),
-            sum([(i[3] - row[-1][3]) ** 2 for i in row]) / len(row),
-            sum([(i[4] - row[-1][4]) ** 2 for i in row]) / len(row),
-            "",
-        ]
-    )
-    df = pd.DataFrame(
-        row,
-        columns=["subject", "epoch", "acc", "loss", "f1-score", "cm"],
-    )
-    # df.to_excel(path, index=False)
-    return df
-
-
-def record_history(config, history, path):
-    metric_df = save_history(history)
-
-    # TODO
-
-
-def dict_format(config):
-    # 将config字典格式化为字符串
-    config_str = yaml.dump(config, default_flow_style=False)
-    return config_str
-
-
 def run(config, logger, device, test_person, history, mode="train"):
     # 加载数据
     train_loader, test_loader = load_data(config, test_person=test_person)
@@ -371,19 +314,13 @@ def main():
         for fold in range(config["training"]["n_folds"]):
             run(config, logger, device, fold, history, mode="train")
     else:
-        for test_person in range(len(config["data"]["subject_lists"])):
+        for test_person in range(len(config["data"]["subject_lists"]) - 28):
             run(config, logger, device, test_person, history, mode="train")
 
-    save_history(
-        history,
-        path=Path(config["logging"]["log_dir"])
-        / logger.timestamp
-        / f"history_res.xlsx",
-    )
+    # 保存训练历史到文件
+    save_path = save_history(config, args.data, logger.timestamp, history)
 
-    logger.info(
-        f"History saved to {Path(config['logging']['log_dir'])/ logger.timestamp / f'history_res.xlsx'}"
-    )
+    logger.info(f"History saved to {save_path}.")
 
     # 关闭日志器
     logger.close()

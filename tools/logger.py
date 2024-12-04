@@ -20,7 +20,14 @@ class TensorBoardLogger:
         self.timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         self.timestamp = str(self.timestamp)
         log_dir = os.path.join(log_dir, self.timestamp)
-        os.makedirs(log_dir, exist_ok=True)
+        if not os.path.exists(log_dir):
+            os.makedirs(log_dir)
+        else:
+            # timestamp already exists, add a suffix
+            self.timestamp = self.timestamp + "_1"
+            log_dir = os.path.join(log_dir, self.timestamp)
+            os.makedirs(log_dir, exist_ok=True)
+
         # Set up log file
         if log_file is None:
             log_file = f"log_{self.timestamp}.txt"
