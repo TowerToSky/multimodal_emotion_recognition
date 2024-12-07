@@ -42,9 +42,21 @@ data:
     subject_lists: [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 24, 25, 26, 27, 28, 29, 30, 31, 33, 34]
     modalities: ['eeg', 'eye', 'au']
     input_size: [960, 41, 119]
+    input_dim: 75
+    label_type: ""
     num_workers: 4
     ch_nums: 31
     ex_nums: 48
+  HCI:
+    data_path: "/data/MAHNOB/hci_data.pkl"
+    subject_lists: [1, 2, 4, 5, 6, 7, 8, 10, 11, 13, 14, 17, 18, 19, 20, 21, 22, 23, 24, 26, 27, 28, 29, 30]
+    modalities: ['eeg', 'eye', 'pps']
+    input_size: [960, 38, 230]
+    input_dim: 585
+    label_type: "arousal"
+    num_workers: 4
+    ch_nums: 32
+    ex_nums: 20
 
 logging:
   log_dir: "/mnt/nvme1/yihaoyuan/Raven/RavenEx/multimodal_emotion_recognition/logs"
@@ -56,4 +68,4 @@ device:
   gpu_ids: [0]
 
 seed: 42
-num_classes: 4
+num_classes: 3

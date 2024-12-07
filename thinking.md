@@ -257,3 +257,96 @@ Norm逻辑传参错了可还行，已修改。
  测试通过便训练大规模的各个模态融合的情绪识别实验
 
  大规模实验受限于CPU的限制，明天迁移到其他机子上再跑一些公开库的实验（这部分结果缺失）
+
+ # 2024-12-05 11：40 竟然能跑完欸
+
+ 昨天晚上20:30跑的，今天11：40发现已经到30个人了，那么12点能跑完，也就是说总共跑了12+3.5=15.5个小时，也还行。还行个damm，数据量少的单模态跑完了，数据量多的比如说三模态，才跑到第15个人，这得跑到什么时候，今晚12点或者明早才能看到结果，可能程序有问题，但是不想调了，多启用几个机器在跑吧
+
+ 得需要把公开库的代码逻辑补全它，然后让他跑上，毕竟要跑至少三个公开库，分别是HCI、DEAP以及SEED，高天师兄应该有预处理好的数据
+
+ 17:35，跑了21个人了，难蹦，预计时间需要24h以上，所以早点把其他实验代码写完然后在后台跑着去吧。
+
+# 2024-12-06 寻找的新的解决策略，在公开库上的评测
+
+ 新的结果出来了，很难崩，脑电的准确率比三模态融合还要高一些
+
+ 改动上，Encoder层，改用了LayerNorm，
+
+ 上述情况，再多看看论文来优化下算法再说吧，先去完善公开库实验
+
+ 先是HCI库，处理HCI库的数据保存成pkl形式
+
+ 分析Raven库的数据集构建过程，对于眼动和人脸特征的提取环节省去了，直接用的现成的特征数据来做的，也就脑电的数据进一步计算了DE特征，那么HCI库高天师兄也同样做了处理，那么去看看
+
+ 参考"/home/yihaoyuan/WorkSpace/hci_workspace/graph/Train/main.py"的代码，其中包含HCI、MPED、SEED、SEED_IV（没DEAP的话，可以参考这个路径"/home/yihaoyuan/WorkSpace/MultimodelProject/multimodel_train.py"，里面有对DEAP的处理。
+
+满抽象的，自己去写吧
+
+HCI库的脑电数据和PPS数据放在了一个文件中，不太适合做ICA，就不做了，预处理过程于Raven保持一致
+
+预处理过程略微有点复杂，后续再说TODO，先优先搞定利用已经处理好的数据来做实验。
+
+[1, 2, 4, 5, 6, 7, 8, 10, 11, 13, 14, 17, 18, 19, 20, 21, 22, 23, 24, 26, 27, 28, 29, 30]
+
+感觉需要面向数据集特定的数据加载类，不然不同的数据集组织形式不太一样，比如说Raven是eeg+eye+au，31通道，48道题目
+
+HCI是两类情绪arousal、valence，32通道，eeg+eye+pps特征.
+
+de_features维度：(15540, 585)，之前raven de_features维度为：(50592, 150)，现在de_features维度为(50592, 75)，与输入到网络的维度密切相关
+
+eye:(24, 20, 38)，pps:(24, 20, 230)
+
+HCI有分类有两个维度，分别是arousal以及valence，分别对应不同的标签，为420，标签均为{0，1，2}，即三分类
+
+```
+Labels :    
+    Arousal: 0:[\"Sadness\", \"Disgust\", \"Neutral\"]、
+            1:[\"Joy, Happiness\", \"Amusement\"] 
+            2:[\"Surprise\", \"Fear\", \"Anger\", \"Anxiety\"]\n\
+
+    Valence: 0:[\"Fear\", \"Anger\", \"Disgust\", \"Sadness\", \"Anxiety\"] 
+            1:[\"Surprise\", \"Neutral\"] 
+            2:[\"Joy, Happiness\", \"Amusement\"]\n\
+
+```
+保存数据于"/data/MAHNOB/hci_data.pkl"
+
+```python
+
+data = {
+    "eeg": hci_de_features,
+    "eye": eye_features,
+    "arousal_label": arousal_label,
+    "valence_label": valence_label,
+    "subject_list": subject_lists,
+    "ch_info": ch_info,
+    "info": "EEG: 1-70filer, 50Hz notch, 256Hz resample;\n\
+Subject : 1-30 subject, no 3,9,12,15,16,25 subject; 24 person, 20 trial, 32 EEG channel, 7 pps channels;\n\
+Labels :    Arousal: 0:[\"Sadness\", \"Disgust\", \"Neutral\"]、1:[\"Joy, Happiness\", \"Amusement\"] 2:[\"Surprise\", \"Fear\", \"Anger\", \"Anxiety\"]\n\
+    Valence: 0:[\"Fear\", \"Anger\", \"Disgust\", \"Sadness\", \"Anxiety\"] 1:[\"Surprise\", \"Neutral\"] 2:[\"Joy, Happiness\", \"Amusement\"]\n\
+Eye Track data : DistanceLeft，PupilLeft，ValidityLeft，Distance Right，Pupil Right，Validity Right，Fixation Index，Gaze Point X，Gaze Point Y，Fixation Duration\n\
+     PPS data : ECG, GSR，Resp，Temp，Status",
+}
+
+```
+
+
+64*585，de的特征读取存在问题
+
+# 2024-12-07 解决HCI bug，跑通实验
+
+## HCI bug修复，跑通实验
+
+想起来了，Raven库的DE数据是重新旋转到了（N，ch_nums, samples）大小，那么HCI库也做相应的处理
+
+真不知道高天当初de是怎么存储的，重新保存下HCI的原始特征吧，然后自行计算算了
+
+24个人，20个trial，32通道, 每个trial的sample数不一样，但这个正常，直接保存下来即可，保存成和Raven一样的数据存储形式'(per_idx, n_trials, n_samples, n_channels)'
+
+HCI能跑通了，不知道结果会怎么样，考虑看看其他的数据集，多跑几组实验。
+
+## DEAP数据处理
+
+DEAP数据集可以搞一下，在/data/zhanggt/DEAP下，有eeg和pps特征，并且pps特征已经被提取出来了。
+
+参考/home/yihaoyuan/WorkSpace/MultimodelProject/deap_test.ipynb来处理deap原始数据，处理代码存放在/mnt/nvme1/yihaoyuan/Raven/RavenEx/multimodal_emotion_recognition/raw_data_process/DEAP路径下。

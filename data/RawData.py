@@ -11,6 +11,7 @@ import os
 import numpy as np
 import joblib
 
+
 class RawData(object):
     def __init__(self, data_path):
         """RawData类用于读取简单预处理后的数据
@@ -26,12 +27,12 @@ class RawData(object):
         self.data = self.load_data()
 
     def load_data(self):
-        assert os.path.exists(self.data_path), "数据路径不存在"
+        assert os.path.exists(self.data_path), f"{self.data_path}数据路径不存在"
         try:
             data = joblib.load(self.data_path)
             print(data.keys())
-            if 'info' in data.keys():
-                print(data['info'])
+            if "info" in data.keys():
+                print(data["info"])
         except Exception as e:
             print(f"数据加载失败，错误信息：{e}")
         return data

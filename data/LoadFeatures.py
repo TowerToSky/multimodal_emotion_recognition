@@ -32,7 +32,12 @@ from common import utils
 class DataFeatures(object):
 
     def __init__(
-        self, data_path, modalities=["eeg", "eye", "au"], subject_lists=None, Norm=None
+        self,
+        data_path,
+        modalities=["eeg", "eye", "au"],
+        subject_lists=None,
+        Norm=None,
+        label_type="",
     ):
         """DataFeatures类用于获取各个模态的初步特征
 
@@ -78,9 +83,14 @@ class DataFeatures(object):
                     sub_nums=len(self.subject_lists),
                     ex_nums=self.ex_nums,
                 )
-
-        assert "label" in rawData.data.keys(), "数据中不包含label"
-        self.label = np.concatenate(rawData.data["label"])
+        label_key = "label"
+        if label_type != None:
+            label_key = f"{label_type}_label"
+        assert label_key in rawData.data.keys(), f"数据中不包含{label_key}数据"
+        if isinstance(rawData.data[label_key], np.ndarray):
+            self.label = rawData.data[label_key]
+        else:
+            self.label = np.concatenate(rawData.data[label_key])
 
     def load_eeg_features(self, eeg_data):
         eegFeatures = EEGFeatures(eeg_data, self.subject_lists, self.data_path)
@@ -96,6 +106,11 @@ class DataFeatures(object):
         auFeatures = AuFeatures(au_data, self.subject_lists, self.data_path)
         au_features = auFeatures.get_features()
         return au_features
+
+    def load_pps_features(self, pps_data):
+        ppsFeatures = PPSFeatures(pps_data, self.subject_lists, self.data_path)
+        pps_features = ppsFeatures.get_features()
+        return pps_features
 
 
 class EEGFeatures(object):
@@ -131,19 +146,22 @@ class EEGFeatures(object):
         feature_path = utils.find_nearest_folder(self.data_path)  # 找到上级文件夹
         feature_path = os.path.join(feature_path, "de_features.pkl")
         if os.path.exists(feature_path):
-            # print(f"DE特征已存在，来自{feature_path},加载中...")
-            # features = joblib.load(feature_path)
-
             # # 额外添加的，为了让其与其他模态的特征形状一致
-            # features = (
-            #     features.reshape(
-            #         len(self.subject_lists), -1, self.ch_nums, features.shape[-1]
-            #     ),
-            # )
-            return joblib.load(feature_path)
+            de_features = joblib.load(feature_path)
+            if len(de_features.shape) == 2:
+                de_features = de_features.reshape(
+                    -1, self.ch_nums, de_features.shape[-1]
+                )
+            return de_features
 
         # 初始化特征列表
         de_features = []
+        max_len = 0
+
+        if "Raven" in self.data_path:
+            max_len = 15
+        else:
+            max_len = 117
         print("开始计算DE特征...")
         for index in tqdm(range(len(self.subject_lists)), desc="Processing Subjects"):
             trials = self.eeg_data[index]
@@ -152,7 +170,7 @@ class EEGFeatures(object):
                 re_trial, _ = dp.re_data_slide(
                     trial, 0, win_len, overlap, is_filter, norm_method
                 )
-                de_feature = self.get_trial_de_feature(re_trial)
+                de_feature = self.get_trial_de_feature(re_trial, max_len=max_len)
                 de_features.append(de_feature)
 
         # 特征后处理
@@ -179,7 +197,7 @@ class EEGFeatures(object):
         features = features.reshape(features.shape[0], ch_nums, -1)  # 合并所有频带
         return features
 
-    def get_trial_de_feature(self, trials):
+    def get_trial_de_feature(self, trials, max_len=15):
         """
         获取单个trial的DE特征
 
@@ -190,7 +208,7 @@ class EEGFeatures(object):
         """
         features = np.array([fe.compute_DE(trial) for trial in trials])
         features = features.swapaxes(0, 2)  # 调整形状
-        features = self._normalize_and_pad(features, target_len=15)
+        features = self._normalize_and_pad(features, target_len=max_len)
         return features
 
     @staticmethod
@@ -407,15 +425,138 @@ class AuFeatures:
         return self.au_features
 
 
+class PPSFeatures:
+    def __init__(self, pps_data, subject_lists, data_path):
+        """
+        PPSFeatures类用于计算和加载面部特征。
+
+        Args:
+            pps_data (np.ndarray): 外周生理信号数据，shape为(per_idx, n_trials, n_samples, n_channels)
+            subject_lists (list): 受试者列表
+            data_path (str): 数据路径
+        """
+        self.pps_data = pps_data
+        self.subject_lists = subject_lists
+        self.data_path = data_path
+        self.pps_features = None  # 初始化特征缓存
+
+    def _normalize(self, features):
+        """
+        归一化特征
+
+        Args:
+            features (np.ndarray): 特征数组
+        Returns:
+            np.ndarray: 归一化后的特征
+        """
+        # 归一化
+        features = (features - np.mean(features)) / np.std(features)
+        features = (features - features.min()) / (features.max() - features.min())
+        return features
+
+    def compute_pps_features(self, feature_dir_name="pps_features"):
+        """
+        加载或计算PPS特征。
+
+        Args:
+            feature_dir_name (str): 存储特征的文件夹名称，默认为"pps_features"
+
+        Returns:
+            np.ndarray: 处理后的PPS特征
+        """
+        # 获取存储特征的文件夹路径
+        pps_features_dir = utils.find_nearest_folder(self.data_path)
+        pps_features_dir = os.path.join(pps_features_dir, feature_dir_name)
+
+        # 确保特征目录存在
+        if not os.path.exists(pps_features_dir):
+            raise FileNotFoundError(f"特征目录不存在：{pps_features_dir}")
+
+        # 初始化特征列表
+        pps_features = []
+        print("开始加载PPS特征...")
+
+        for subject in tqdm(self.subject_lists, desc="Processing Subjects"):
+            pps_feature_path = os.path.join(pps_features_dir, f"{subject}.npy")
+            if not os.path.exists(pps_feature_path):
+                raise FileNotFoundError(f"缺少文件：{pps_feature_path}")
+
+            # 加载特征文件
+            subject_pps_features = np.load(pps_feature_path, allow_pickle=True).astype(
+                np.float32
+            )
+            subject_pps_features = np.nan_to_num(subject_pps_features)  # 替换NaN值
+            subject_pps_features = self._normalize(subject_pps_features)
+            pps_features.append(subject_pps_features)
+
+        # 合并所有受试者的特征
+        pps_features = np.concatenate(pps_features, axis=0)
+        print("PPS特征加载完成。")
+
+        # self.pps_features = pps_features
+        return pps_features
+
+    def get_features(self):
+        """
+        获取计算或加载的PPS特征
+
+        Returns:
+            np.ndarray: PPS特征
+        """
+        if self.pps_features is None:
+            self.pps_features = self.compute_pps_features()
+        return self.pps_features
+
+
 if __name__ == "__main__":
-    data_path = "/data/Ruiwen/data_with_ICA.pkl"
-    subject_list = [i for i in range(1, 35) if i != 1 and i != 23 and i != 32]
+    # data_path = "/data/Ruiwen/data_with_ICA.pkl"
+    # subject_list = [i for i in range(1, 35) if i != 1 and i != 23 and i != 32]
+    # print(subject_list)
+    # modalities = ["eeg", "eye", "au"]
+    # ruiwenData = DataFeatures(
+    #     data_path, modalities=modalities, subject_lists=subject_list, Norm="Z_score"
+    # )
+    # print(ruiwenData.features)
+    # for modality in modalities:
+    #     print(modality, ruiwenData.features[modality].shape)
+
+    data_path = "/data/MAHNOB/hci_data.pkl"
+    subject_list = [
+        1,
+        2,
+        4,
+        5,
+        6,
+        7,
+        8,
+        10,
+        11,
+        13,
+        14,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        26,
+        27,
+        28,
+        29,
+        30,
+    ]
     print(subject_list)
-    modalities = ["eeg", "eye", "au"]
-    ruiwenData = DataFeatures(
-        data_path, modalities=modalities, subject_lists=subject_list, Norm="Z_score"
+    modalities = ["eeg", "eye", "pps"]
+    mahnobData = DataFeatures(
+        data_path,
+        modalities=modalities,
+        subject_lists=subject_list,
+        Norm="Z_score",
+        label_type="arousal",
     )
-    print(ruiwenData.features)
+    print(mahnobData.features)
     for modality in modalities:
-        print(modality, ruiwenData.features[modality].shape)
+        print(modality, mahnobData.features[modality].shape)
     pass

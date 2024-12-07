@@ -40,6 +40,7 @@ class Trainer:
         logger=None,
         scheduler=None,
         device="cuda",
+        modalities=None,
     ):
         """
         Introduction:
@@ -66,13 +67,14 @@ class Trainer:
         self.device = device
         self.logger = logger or TensorBoardLogger()
         self.metrics = Metrics(num_classes)
+        self.modalities = modalities
 
         self.history = dict()
 
     def _process_input(self, inputs):
         """处理输入数据，确保其正确放到设备上，并且转换成torch.float32"""
         return_inputs = {}
-        for key in ["eeg", "eye", "au"]:
+        for key in self.modalities:
             if inputs.get(key, None) is not None:
                 return_inputs[key] = inputs[key].to(self.device).to(torch.float32)
             else:
@@ -175,7 +177,7 @@ class Trainer:
                 self.train_loader,
                 desc=f"Person {test_person}: Epoch {epoch+1}/{num_epochs} - Training",
             ):
-                if len(targets) != graph_indicator[-1]:
+                if len(targets) != graph_indicator[-1] - 1:
                     adj, graph_indicator = initialize_graph(
                         data_config, len(targets), self.device
                     )
@@ -192,7 +194,7 @@ class Trainer:
             for inputs, targets in tqdm(
                 self.test_loader, desc=f"Epoch {epoch+1}/{num_epochs} - Validation"
             ):
-                if len(targets) != graph_indicator[-1]:
+                if len(targets) != graph_indicator[-1] - 1:
                     adj, graph_indicator = initialize_graph(
                         data_config, len(targets), self.device
                     )

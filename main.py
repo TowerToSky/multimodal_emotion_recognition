@@ -63,7 +63,8 @@ def parse_args(args=None):
     parser.add_argument(
         "--data",
         type=str,
-        default="Ruiwen",
+        default="HCI",
+        # default="Ruiwen",
         help="Data name.",
     )
     parser.add_argument(
@@ -77,6 +78,8 @@ def parse_args(args=None):
     parser.add_argument(
         "--num_classes", type=int, default=None, help="Number of classes."
     )
+    parser.add_argument(
+        "--label_type", type=str, default="arousal", help="Label type.")
     parser.add_argument(
         "--using_modality", type=str, default=None, help="Using modality."
     )
@@ -106,11 +109,12 @@ def modify_config(config, args):
     """根据命令行参数修改配置"""
     config["model"] = config["model"][args.model]
     config["data"] = config["data"][args.data]
+    config["data"]["label_type"] = args.label_type
     config["num_classes"] = (
         args.num_classes if args.num_classes is not None else config["num_classes"]
     )
     config["model"]["classifier"]["nb_classes"] = config["num_classes"]
-
+    config["model"]["feature_extract"]["input_dim"] = config["data"]["input_dim"]
     using_modality = None
     if args.using_modality is not None:
         using_modality = args.using_modality
@@ -133,7 +137,7 @@ def modify_config(config, args):
                 new_input_size.append(input_size[0])
             elif modality == "eye":
                 new_input_size.append(input_size[1])
-            elif modality == "au":
+            elif modality == "au" or modality == "pps":
                 new_input_size.append(input_size[2])
         config["data"]["modalities"] = using_modality
         config["data"]["input_size"] = new_input_size
@@ -163,6 +167,10 @@ def modify_config(config, args):
             config["logging"]["log_dir"] + "/" + "independent"
         )
 
+    # 修改输出目录到指定数据集
+    config["logging"]["model_dir"] = config["logging"]["model_dir"] + "/" + args.data
+    config["logging"]["log_dir"] = config["logging"]["log_dir"] + "/" + args.data
+
     return config
 
 
@@ -177,11 +185,13 @@ def prepare_environment(config):
 
 def load_data(config, test_person=-1):
     """加载数据集"""
+    label_type = config["data"]["label_type"]
     data = DataFeatures(
         data_path=config["data"]["data_path"],
         modalities=config["data"]["modalities"],
         subject_lists=config["data"]["subject_lists"],
         Norm="Z_score",
+        label_type=label_type,
     )
     train_dataset = FeatureDataset(
         data,
@@ -261,6 +271,7 @@ def run(config, logger, device, test_person, history, mode="train"):
         logger=logger,
         scheduler=None,
         device=device,
+        modalities=config["data"]["modalities"],
     )
 
     # 打印初始状态
