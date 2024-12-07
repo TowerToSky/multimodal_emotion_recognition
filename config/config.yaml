@@ -27,13 +27,15 @@ model:
 training:
   ex_name: "First Fire" 
   batch_size: 64
-  epochs: 300
+  epochs: 500
   learning_rate: 0.0001
   weight_decay: 0.002
   optimizer: "adam"
   loss_function: "cross_entropy"
   dependent: False
   n_folds: 10
+  using_modalities: ['eeg']
+
 
 data:
   name: "Ruiwen"

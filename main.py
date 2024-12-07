@@ -115,6 +115,7 @@ def modify_config(config, args):
     )
     config["model"]["classifier"]["nb_classes"] = config["num_classes"]
     config["model"]["feature_extract"]["input_dim"] = config["data"]["input_dim"]
+
     using_modality = None
     if args.using_modality is not None:
         using_modality = args.using_modality
@@ -126,7 +127,7 @@ def modify_config(config, args):
             if len(modality.strip(" ")) > 0
         ]
     else:
-        using_modality = config["data"]["modalities"]
+        using_modality = config["training"]["using_modalities"]
 
     # 根据模态修改输入维度
     input_size = config["data"]["input_size"]
@@ -139,7 +140,9 @@ def modify_config(config, args):
                 new_input_size.append(input_size[1])
             elif modality == "au" or modality == "pps":
                 new_input_size.append(input_size[2])
-        config["data"]["modalities"] = using_modality
+        config["training"]["using_modalities"] = using_modality
+
+
         config["data"]["input_size"] = new_input_size
         config["model"]["feature_align"]["input_size"] = new_input_size
         d_model = config["model"]["fusion"]["d_model"]
@@ -149,6 +152,7 @@ def modify_config(config, args):
 
     print(config["data"]["input_size"])
     print(config["data"]["modalities"])
+    print(config["training"]["using_modalities"])
 
     # 根据denpendent参数修改输出路径配置
     if args.dependent is not None:
@@ -188,7 +192,7 @@ def load_data(config, test_person=-1):
     label_type = config["data"]["label_type"]
     data = DataFeatures(
         data_path=config["data"]["data_path"],
-        modalities=config["data"]["modalities"],
+        modalities=config["training"]["using_modalities"],
         subject_lists=config["data"]["subject_lists"],
         Norm="Z_score",
         label_type=label_type,
