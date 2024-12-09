@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 # @software: Vscode
 # @project: multimodal_emotion_recognition
-# @file: main.py
-# @time: 2024/11/27 11:16
+# @file: cross_main.py
+# @time: 2024/12/08 15:18
 # @author: yihaoyuan
 # @email: yihy0209@163.com
-# @usage: 主函数实现
+# @usage: 跨模态实验的主函数
 
 import os
 import sys
@@ -78,7 +78,8 @@ def parse_args(args=None):
     parser.add_argument(
         "--num_classes", type=int, default=None, help="Number of classes."
     )
-    parser.add_argument("--label_type", type=str, default="arousal", help="Label type.")
+    parser.add_argument(
+        "--label_type", type=str, default="arousal", help="Label type.")
     parser.add_argument(
         "--using_modality", type=str, default=None, help="Using modality."
     )
@@ -141,20 +142,13 @@ def modify_config(config, args):
                 new_input_size.append(input_size[2])
         config["training"]["using_modalities"] = using_modality
 
+
         config["data"]["input_size"] = new_input_size
         config["model"]["feature_align"]["input_size"] = new_input_size
         d_model = config["model"]["fusion"]["d_model"]
-        # 根据模态修改模型维度（zhe'k
-        swell = 1
-        if config["model"]["type"] == "major_modality_fusion":
-            if len(using_modality) > 1:
-                swell = 2
-        elif config["model"]["type"] == "iterative_fusion":
-            swell = 3
-        elif config["model"]["type"] == "full_compose_fusion":
-            swell = 6
-        config["model"]["fusion"]["d_model"] = d_model * swell * 2
-        config["model"]["attention_encoder"]["d_model"] = d_model * swell * 2
+        if len(using_modality) > 1:
+            config["model"]["fusion"]["d_model"] = d_model * 4
+            config["model"]["attention_encoder"]["d_model"] = d_model * 4
 
     print(config["data"]["input_size"])
     print(config["data"]["modalities"])

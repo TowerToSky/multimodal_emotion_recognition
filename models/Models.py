@@ -69,7 +69,7 @@ class MFAFESM(nn.Module):
 
         self.feature_extract = FeatureExtract(cfg["feature_extract"])
         self.feature_align = Embrace(cfg["feature_align"])
-        self.fusion = AFFM(cfg["fusion"])
+        self.fusion = AFFM(cfg["fusion"], model_name=cfg["type"])
         self.attention_encoder = AttentionEncoder(cfg["attention_encoder"])
         self.classifier = Classifier(cfg["classifier"])
 
@@ -192,10 +192,11 @@ class AFFM(nn.Module):
         融合策略：A和B跨模态交叉注意力融合，与A拼接，B取最大值和平均值，再相加
     """
 
-    def __init__(self, cfg=None):  # 暂时不考虑多头注意力机制
+    def __init__(self, cfg=None, model_name=None):  # 暂时不考虑多头注意力机制
         super(AFFM, self).__init__()
         self.embed_dim = cfg["embed_dim"]
         self.d_model = cfg["d_model"]
+        self.model_name = model_name
 
         self.attention = Attention(self.embed_dim, num_heads=cfg["num_heads"])
         self.fn = nn.Linear(self.d_model, self.d_model)
@@ -213,6 +214,81 @@ class AFFM(nn.Module):
         f = f.mean(0) + f.max(0)[0]
         return f.expand(view.size())
 
+    def binary_fusion(self, input_list):
+        a = input_list[0]
+        b = input_list[1]
+        x_1 = torch.concat([a, self.attention(a, b) + self.MI(b, a)], dim=2)
+        x_2 = torch.concat([b, self.attention(b, a) + self.MI(a, b)], dim=2)
+        x = torch.concat([x_1, x_2], dim=2)
+        return x
+
+    def major_modality_fusion(self, input_list):
+        """
+        Introduction:
+            主导模态融合策略，即将EEG视为主导模态进行融合
+        Args:
+            input_list: 输入数据列表，通常为EEG、Eye、Au三个模态信息
+        Returns:
+            融合后的数据
+        """
+        if len(input_list) == 3:
+            a = input_list[0]
+            b = input_list[1]
+            c = input_list[2]
+            x_1 = torch.concat([a, self.attention(a, b) + self.MI(b, a)], dim=2)
+            x_2 = torch.concat([a, self.attention(a, c) + self.MI(c, a)], dim=2)
+            x = torch.concat([x_1, x_2], dim=2)
+        elif len(input_list) == 2:
+            x = self.binary_fusion(input_list)
+        return x
+
+    def full_compose_fusion(self, input_list):
+        """
+        Introduction:
+            全连接融合策略，即将EEG、Eye、Au三个模态信息进行融合
+        Args:
+            input_list: 输入数据列表，通常为EEG、Eye、Au三个模态信息
+        Returns:
+            融合后的数据
+        """
+        if len(input_list) == 3:
+            a = input_list[0]
+            b = input_list[1]
+            c = input_list[2]
+            x_1 = torch.concat([a, self.attention(a, b) + self.MI(b, a)], dim=2)
+            x_2 = torch.concat([a, self.attention(a, c) + self.MI(c, a)], dim=2)
+            x_3 = torch.concat([b, self.attention(b, a) + self.MI(a, b)], dim=2)
+            x_4 = torch.concat([b, self.attention(b, c) + self.MI(c, b)], dim=2)
+            x_5 = torch.concat([c, self.attention(c, a) + self.MI(a, c)], dim=2)
+            x_6 = torch.concat([c, self.attention(c, b) + self.MI(b, c)], dim=2)
+            x = torch.concat([x_1, x_2, x_3, x_4, x_5, x_6], dim=2)
+        elif len(input_list) == 2:
+            x = self.binary_fusion(input_list)
+
+        return x
+
+    def iterative_fusion(self, input_list):
+        """
+        Introduction:
+            迭代融合策略，即将EEG、Eye、Au三个模态信息进行迭代融合
+        Args:
+            input_list: 输入数据列表，通常为EEG、Eye、Au三个模态信息
+        Returns:
+            融合后的数据
+        """
+        if len(input_list) == 3:
+            a = input_list[0]
+            b = input_list[1]
+            c = input_list[2]
+            x_1 = torch.concat([a, self.attention(a, b) + self.MI(b, a)], dim=2)
+            x_2 = torch.concat([a, self.attention(a, c) + self.MI(c, a)], dim=2)
+            x_3 = torch.concat([b, self.attention(b, c) + self.MI(c, b)], dim=2)
+            x = torch.concat([x_1, x_2, x_3], dim=2)
+        elif len(input_list) == 2:
+            x = self.binary_fusion(input_list)
+
+        return x
+
     def forward(self, input_list):
         """
         Introduction:
@@ -222,23 +298,21 @@ class AFFM(nn.Module):
         Returns:
             输出数据
         """
-        if len(input_list) == 3:
-            a = input_list[0]
-            b = input_list[1]
-            c = input_list[2]
-            x_1 = torch.concat([a, self.attention(a, b) + self.MI(b, a)], dim=2)
-            x_2 = torch.concat([a, self.attention(a, c) + self.MI(c, a)], dim=2)
-        elif len(input_list) == 2:
-            a = input_list[0]
-            b = input_list[1]
-            x_1 = torch.concat([a, self.attention(a, b) + self.MI(b, a)], dim=2)
-            x_2 = torch.concat([b, self.attention(b, a) + self.MI(a, b)], dim=2)
-        else:
-            return input_list[0]
 
-        x = torch.concat([x_1, x_2], dim=2)
-        x = self.fn(x)
-        return x
+        if len(input_list) == 1:
+            return input_list[0]
+        if self.model_name == "major_modality_fusion":
+            fusion = self.major_modality_fusion(input_list)
+        elif self.model_name == "full_compose_fusion":
+            fusion = self.full_compose_fusion(input_list)
+        elif self.model_name == "iterative_fusion":
+            fusion = self.iterative_fusion(input_list)
+        # fusion = self.major_modality_fusion(input_list)
+        # fusion = self.major_modality_fusion(input_list)
+        # fusion = self.iterative_fusion(input_list)
+        fusion = self.fn(fusion)
+
+        return fusion
 
 
 class AttentionEncoder(nn.Module):

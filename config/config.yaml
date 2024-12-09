@@ -1,6 +1,8 @@
 model:
-  type: "MFAFESM"
   MFAFESM:
+    # type: "major_modality_fusion"
+    type: "full_compose_fusion"
+    # type: "iterative_fusion"
     feature_extract:
       input_dim: 75
       hidden_dim: &feature_extract_hidden_dim 160  # 定义锚点
@@ -25,7 +27,7 @@ model:
       embed_dim: 1600  # 直接写计算结果（160 * 10）
 
 training:
-  ex_name: "First Fire" 
+  ex_name: "full_compose_fusion" 
   batch_size: 64
   epochs: 500
   learning_rate: 0.0001
@@ -34,7 +36,7 @@ training:
   loss_function: "cross_entropy"
   dependent: False
   n_folds: 10
-  using_modalities: ['eeg']
+  using_modalities: ['eeg', 'eye', 'pps']
 
 
 data:

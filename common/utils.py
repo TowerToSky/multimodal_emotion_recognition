@@ -349,6 +349,17 @@ def save_history(config, data_name, timestamp, history):
     # 合并DataFrame
     new_df = pd.DataFrame([combined_row], index=["acc/f1-score"]).reset_index(drop=True)
     config_df = pd.concat([config_df, new_df], axis=1)
+
+    # 修改合并的acc和f1-score
+    acc = config_df["Mean"].str.split("/").str[0]
+    f1 = config_df["Mean"].str.split("/").str[1]
+    std_acc = config_df["Std"].str.split("/").str[0]
+    std_f1 = config_df["Std"].str.split("/").str[1]
+    config_df["Mean"] = acc + "/" + std_acc
+    config_df["Std"] = f1 + "/" + std_f1
+    # 修改mean为acc/std，std为f1/std
+    config_df = config_df.rename(columns={"Mean": "Acc/Std", "Std": "F1/Std"})
+
     config_df["cm"] = cm_str
 
     # 保存历史数据

@@ -4,15 +4,15 @@ echo $DIR
 
 dataset="HCI"
 # modalities="eeg, eye, au"
-# modalities="eeg, eye, pps"
-modalities=("eeg" "eye" "pps")
+modalities=("eeg, eye, pps")
+# modalities=("eeg" "eye" "pps")
 for label_type in "arousal" "valence"
 do
     for cls_num in 3 #2 4
     do
-        for dependent in 0 1
+        for dependent in 0 # 1
         do
-            for modality in ${modalities[@]}
+            for modality in "${modalities[@]}"
             do
                 sleep 2
                 echo "Dataset: $dataset, Num Classes: $cls_num, Dependent: $dependent, Label Type: $label_type, Modality: $modality"
