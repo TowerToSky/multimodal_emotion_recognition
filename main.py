@@ -98,10 +98,40 @@ def parse_args(args=None):
         default=None,
         help="Input for inference (required in infer mode).",
     )
+    # 添加消融实验的参数
+    parser.add_argument(
+        "--seq_len",
+        type=int,
+        default=None,
+        help="Sequence length for the model.",
+    )
+    parser.add_argument(
+        "--d_model",
+        type=int,
+        default=None,
+        help="Model dimension.",
+    )
     if args is not None:
         return parser.parse_args(args)
 
     return parser.parse_args()
+
+
+def modify_dmodel(config, d_model):
+    """修改模型所有与d_model有关的参数"""
+    config["model"]["feature_extract"]["hidden_dim"] = d_model
+    config["model"]["feature_align"]["embed_dim"] = d_model
+
+    config["model"]["fusion"]["embed_dim"] = d_model
+    config["model"]["fusion"]["d_model"] = d_model
+
+    config["model"]["attention_encoder"]["d_model"] = d_model
+    config["model"]["attention_encoder"]["embed_dim"] = d_model
+
+    config["model"]["classifier"]["embed_dim"] = (
+        d_model * config["model"]["feature_align"]["seq_len"]
+    )
+    return config
 
 
 def modify_config(config, args):
@@ -143,22 +173,32 @@ def modify_config(config, args):
 
         config["data"]["input_size"] = new_input_size
         config["model"]["feature_align"]["input_size"] = new_input_size
-        d_model = config["model"]["fusion"]["d_model"]
-        # 根据模态修改模型维度（zhe'k
-        swell = 1
-        if config["model"]["type"] == "major_modality_fusion":
-            if len(using_modality) > 1:
-                swell = 2
-        elif config["model"]["type"] == "iterative_fusion":
-            swell = 3
-        elif config["model"]["type"] == "full_compose_fusion":
-            swell = 6
-        config["model"]["fusion"]["d_model"] = d_model * swell * 2
-        config["model"]["attention_encoder"]["d_model"] = d_model * swell * 2
 
     print(config["data"]["input_size"])
     print(config["data"]["modalities"])
     print(config["training"]["using_modalities"])
+
+    if args.d_model is not None:
+        modify_dmodel(config, args.d_model)
+
+    d_model = config["model"]["fusion"]["d_model"]
+    # 根据模态修改模型维度（zhe'k
+    swell = 1
+    if config["model"]["type"] == "major_modality_fusion":
+        if len(using_modality) > 1:
+            swell = 2
+    elif config["model"]["type"] == "iterative_fusion":
+        swell = 3
+    elif config["model"]["type"] == "full_compose_fusion":
+        swell = 6
+    config["model"]["fusion"]["d_model"] = d_model * swell * 2
+    config["model"]["attention_encoder"]["d_model"] = d_model * swell * 2
+
+    # 根据命令行参数修改配置
+    # 消融seq_len参数设置
+    if args.seq_len is not None:
+        config["model"]["feature_align"]["seq_len"] = args.seq_len
+        config["model"]["classifier"]["embed_dim"] = args.seq_len * d_model
 
     # 根据denpendent参数修改输出路径配置
     if args.dependent is not None:
@@ -300,11 +340,17 @@ def run(config, logger, device, test_person, history, mode="train"):
         )
 
         # 保存最终模型
-        trainer.save_checkpoint(
-            Path(config["logging"]["model_dir"])
-            / f"checkpoint_{logger.timestamp}"
-            / f"checkpoint_{test_person}_{config['training']['epochs']}.pth"
-        )
+        if not config["logging"]["save_best_only"]:
+            trainer.save_checkpoint(
+                Path(config["logging"]["model_dir"])
+                / f"checkpoint_{logger.timestamp}"
+                / f"checkpoint_{test_person}_best.pth"
+            )
+        # trainer.save_checkpoint(
+        #     Path(config["logging"]["model_dir"])
+        #     / f"checkpoint_{logger.timestamp}"
+        #     / f"checkpoint_{test_person}_{config['training']['epochs']}.pth"
+        # )
     elif mode == "infer":
         trainer.infer(config["data"], test_person)
 

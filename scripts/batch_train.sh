@@ -14,14 +14,18 @@ do
         do
             for modality in "${modalities[@]}"
             do
-                sleep 2
-                echo "Dataset: $dataset, Num Classes: $cls_num, Dependent: $dependent, Label Type: $label_type, Modality: $modality"
-                /home/yihaoyuan/miniconda3/envs/torch/bin/python $DIR/../main.py \
-                --data $dataset \
-                --num_classes $cls_num \
-                --label_type $label_type \
-                --dependent $dependent \
-                --using_modality "$modality" &
+                for seq_len in 6 8 12 16
+                do
+                    sleep 2
+                    echo "Dataset: $dataset, Num Classes: $cls_num, Dependent: $dependent, Label Type: $label_type, Modality: $modality, Seq Len: $seq_len"
+                    /home/yihaoyuan/miniconda3/envs/torch/bin/python $DIR/../main.py \
+                    --data $dataset \
+                    --num_classes $cls_num \
+                    --label_type $label_type \
+                    --dependent $dependent \
+                    --using_modality "$modality" \
+                    --seq_len $seq_len &
+                done
             done
         done
     done

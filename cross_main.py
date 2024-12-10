@@ -340,6 +340,5 @@ def main():
     # 关闭日志器
     logger.close()
 
-
 if __name__ == "__main__":
     main()

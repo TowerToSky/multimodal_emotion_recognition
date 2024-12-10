@@ -1,8 +1,8 @@
 model:
   MFAFESM:
     # type: "major_modality_fusion"
-    type: "full_compose_fusion"
-    # type: "iterative_fusion"
+    # type: "full_compose_fusion"
+    type: "iterative_fusion"
     feature_extract:
       input_dim: 75
       hidden_dim: &feature_extract_hidden_dim 160  # 定义锚点
