@@ -30,7 +30,7 @@ class TensorBoardLogger:
 
         # Set up log file
         if log_file is None:
-            log_file = f"log_{self.timestamp}.txt"
+            log_file = f"log_{self.timestamp}.log"
         self.log_path = os.path.join(log_path, log_file)
 
         # Configure text logger

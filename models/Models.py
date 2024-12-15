@@ -115,7 +115,7 @@ class MFAFESM(nn.Module):
         result = self.classifier(encoded_features)
 
         result = F.log_softmax(result, dim=1)
-        return result
+        return result, fused_features, encoded_features
 
 
 class FeatureExtract(nn.Module):
@@ -289,6 +289,30 @@ class AFFM(nn.Module):
 
         return x
 
+    def add_fusion(self, input_list):
+        """
+        Introduction:
+            加法融合策略，即将EEG、Eye、Au三个模态信息进行加法融合
+        Args:
+            input_list: 输入数据列表，通常为EEG、Eye、Au三个模态信息
+        Returns:
+            融合后的数据
+        """
+        if len(input_list) == 3:
+            a = input_list[0]
+            b = input_list[1]
+            c = input_list[2]
+            x_1 = a + self.attention(a, b) + self.MI(b, a)
+            x_2 = a + self.attention(a, c) + self.MI(c, a)
+            x_3 = b + self.attention(b, c) + self.MI(c, b)
+            x = torch.cat([x_1, x_2, x_3], dim=2)
+            # 这儿也可以考虑加法融合
+        elif len(input_list) == 2:
+            a = input_list[0]
+            b = input_list[1]
+            x = a + self.attention(a, b) + self.MI(b, a)
+        return x
+
     def forward(self, input_list):
         """
         Introduction:
@@ -307,6 +331,8 @@ class AFFM(nn.Module):
             fusion = self.full_compose_fusion(input_list)
         elif self.model_name == "iterative_fusion":
             fusion = self.iterative_fusion(input_list)
+        elif self.model_name == "add_fusion":
+            fusion = self.add_fusion(input_list)
         # fusion = self.major_modality_fusion(input_list)
         # fusion = self.major_modality_fusion(input_list)
         # fusion = self.iterative_fusion(input_list)

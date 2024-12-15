@@ -84,7 +84,7 @@ class DataFeatures(object):
                     ex_nums=self.ex_nums,
                 )
         label_key = "label"
-        if label_type != None:
+        if label_type != "ruiwen":
             label_key = f"{label_type}_label"
         assert label_key in rawData.data.keys(), f"数据中不包含{label_key}数据"
         if isinstance(rawData.data[label_key], np.ndarray):

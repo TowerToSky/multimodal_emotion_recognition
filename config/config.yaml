@@ -2,7 +2,9 @@ model:
   MFAFESM:
     # type: "major_modality_fusion"
     # type: "full_compose_fusion"
+    # type: "add_fusion"
     type: "iterative_fusion"
+    missing: False
     feature_extract:
       input_dim: 75
       hidden_dim: &feature_extract_hidden_dim 160  # 定义锚点
@@ -27,7 +29,7 @@ model:
       embed_dim: 1600  # 直接写计算结果（160 * 10）
 
 training:
-  ex_name: "full_compose_fusion" 
+  ex_name: "Run the Raven experiment again." 
   batch_size: 64
   epochs: 500
   learning_rate: 0.0001

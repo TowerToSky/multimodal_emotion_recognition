@@ -116,7 +116,7 @@ class Trainer:
         eeg, eye, au = self._process_input(inputs)
         targets = targets.to(self.device)
 
-        outputs = self.model(adj, graph_indicator, eeg, eye, au, pps=None)
+        outputs, _, _ = self.model(adj, graph_indicator, eeg, eye, au, pps=None)
         loss = self.loss_fn(outputs, targets)
         acc = torch.eq(outputs.argmax(dim=1), targets).sum().item() / len(targets)
 

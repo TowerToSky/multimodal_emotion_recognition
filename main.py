@@ -111,6 +111,12 @@ def parse_args(args=None):
         default=None,
         help="Model dimension.",
     )
+    parser.add_argument(
+        "--num_layers",
+        type=int,
+        default=None,
+        help="Sequence length for the model.",
+    )
     if args is not None:
         return parser.parse_args(args)
 
@@ -191,14 +197,20 @@ def modify_config(config, args):
         swell = 3
     elif config["model"]["type"] == "full_compose_fusion":
         swell = 6
-    config["model"]["fusion"]["d_model"] = d_model * swell * 2
-    config["model"]["attention_encoder"]["d_model"] = d_model * swell * 2
+    elif config["model"]["type"] == "add_fusion":
+        swell = 1.5
+    config["model"]["fusion"]["d_model"] = d_model * int(swell * 2)
+    config["model"]["attention_encoder"]["d_model"] = d_model * int(swell * 2)
 
     # 根据命令行参数修改配置
     # 消融seq_len参数设置
     if args.seq_len is not None:
         config["model"]["feature_align"]["seq_len"] = args.seq_len
         config["model"]["classifier"]["embed_dim"] = args.seq_len * d_model
+
+    # 消融encoder layer大小设置
+    if args.num_layers is not None:
+        config["model"]["attention_encoder"]["num_layers"] = args.num_layers
 
     # 根据denpendent参数修改输出路径配置
     if args.dependent is not None:
@@ -281,6 +293,7 @@ def initialize_model(config, device):
     model = MFAFESM(config["model"])
     model = model.to(device)
     return model
+
 
 
 def run(config, logger, device, test_person, history, mode="train"):
