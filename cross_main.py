@@ -34,8 +34,10 @@ from pathlib import Path
 
 # 引入自定义模块
 from models.Models import MFAFESM
+from models.MissingModels import MissMFAFESM
 from data.LoadFeatures import DataFeatures
 from data.Dataset import FeatureDataset
+from data.MissTaskData import MissTaskDataset
 from train.Trainer import Trainer
 from tools.logger import TensorBoardLogger
 from common.utils import (
@@ -78,8 +80,7 @@ def parse_args(args=None):
     parser.add_argument(
         "--num_classes", type=int, default=None, help="Number of classes."
     )
-    parser.add_argument(
-        "--label_type", type=str, default="arousal", help="Label type.")
+    parser.add_argument("--label_type", type=str, default="arousal", help="Label type.")
     parser.add_argument(
         "--using_modality", type=str, default=None, help="Using modality."
     )
@@ -99,21 +100,62 @@ def parse_args(args=None):
         default=None,
         help="Input for inference (required in infer mode).",
     )
+    # 添加消融实验的参数
+    parser.add_argument(
+        "--seq_len",
+        type=int,
+        default=None,
+        help="Sequence length for the model.",
+    )
+    parser.add_argument(
+        "--d_model",
+        type=int,
+        default=None,
+        help="Model dimension.",
+    )
+    parser.add_argument(
+        "--num_layers",
+        type=int,
+        default=None,
+        help="Sequence length for the model.",
+    )
     if args is not None:
         return parser.parse_args(args)
 
     return parser.parse_args()
 
 
+def modify_dmodel(config, d_model):
+    """修改模型所有与d_model有关的参数"""
+    config["model"]["feature_extract"]["hidden_dim"] = d_model
+    config["model"]["feature_align"]["embed_dim"] = d_model
+
+    config["model"]["fusion"]["embed_dim"] = d_model
+    config["model"]["fusion"]["d_model"] = d_model
+
+    config["model"]["attention_encoder"]["d_model"] = d_model
+    config["model"]["attention_encoder"]["embed_dim"] = d_model
+
+    config["model"]["classifier"]["embed_dim"] = (
+        d_model * config["model"]["feature_align"]["seq_len"]
+    )
+    return config
+
+
 def modify_config(config, args):
     """根据命令行参数修改配置"""
     config["model"] = config["model"][args.model]
     config["data"] = config["data"][args.data]
-    config["data"]["label_type"] = args.label_type
+    if args.data != "Ruiwen":
+        config["data"]["label_type"] = args.label_type
+    else:
+        config["data"]["label_type"] = None
+
     config["num_classes"] = (
         args.num_classes if args.num_classes is not None else config["num_classes"]
     )
     config["model"]["classifier"]["nb_classes"] = config["num_classes"]
+    config["training"]["num_classes"] = config["num_classes"]
     config["model"]["feature_extract"]["input_dim"] = config["data"]["input_dim"]
 
     using_modality = None
@@ -142,38 +184,67 @@ def modify_config(config, args):
                 new_input_size.append(input_size[2])
         config["training"]["using_modalities"] = using_modality
 
-
-        config["data"]["input_size"] = new_input_size
-        config["model"]["feature_align"]["input_size"] = new_input_size
-        d_model = config["model"]["fusion"]["d_model"]
-        if len(using_modality) > 1:
-            config["model"]["fusion"]["d_model"] = d_model * 4
-            config["model"]["attention_encoder"]["d_model"] = d_model * 4
+        config["data"]["input_size"] = new_input_size.copy()
+        config["model"]["feature_align"]["input_size"] = new_input_size.copy()
+        config["model"]["feature_align"]["missing_input_size"] = new_input_size.copy()
 
     print(config["data"]["input_size"])
     print(config["data"]["modalities"])
     print(config["training"]["using_modalities"])
 
+    if args.d_model is not None:
+        modify_dmodel(config, args.d_model)
+
+    d_model = config["model"]["fusion"]["d_model"]
+    # 根据模态修改模型维度（zhe'k
+    swell = 1
+    if config["model"]["type"] == "major_modality_fusion":
+        if len(using_modality) > 1:
+            swell = 2
+    elif config["model"]["type"] == "iterative_fusion":
+        swell = 3
+    elif config["model"]["type"] == "full_compose_fusion":
+        swell = 6
+    elif config["model"]["type"] == "add_fusion":
+        swell = 1.5
+    config["model"]["fusion"]["d_model"] = d_model * int(swell * 2)
+    config["model"]["attention_encoder"]["d_model"] = d_model * int(swell * 2)
+
+    # 根据命令行参数修改配置
+    # 消融seq_len参数设置
+    if args.seq_len is not None:
+        config["model"]["feature_align"]["seq_len"] = args.seq_len
+        config["model"]["classifier"]["embed_dim"] = args.seq_len * d_model
+
+    # 消融encoder layer大小设置
+    if args.num_layers is not None:
+        config["model"]["attention_encoder"]["num_layers"] = args.num_layers
+
     # 根据denpendent参数修改输出路径配置
     if args.dependent is not None:
         config["training"]["dependent"] = True if args.dependent == 1 else False
 
-    if config["training"]["dependent"]:
-        config["logging"]["model_dir"] = (
-            config["logging"]["model_dir"] + "/" + "dependent"
-        )
-        config["logging"]["log_dir"] = config["logging"]["log_dir"] + "/" + "dependent"
-    else:
-        config["logging"]["model_dir"] = (
-            config["logging"]["model_dir"] + "/" + "independent"
-        )
-        config["logging"]["log_dir"] = (
-            config["logging"]["log_dir"] + "/" + "independent"
-        )
+    dependent = "dependent" if config["training"]["dependent"] else "independent"
+
+    config["logging"]["model_dir"] = config["logging"]["model_dir"] + "/" + dependent
+    config["logging"]["log_dir"] = config["logging"]["log_dir"] + "/" + dependent
 
     # 修改输出目录到指定数据集
     config["logging"]["model_dir"] = config["logging"]["model_dir"] + "/" + args.data
     config["logging"]["log_dir"] = config["logging"]["log_dir"] + "/" + args.data
+
+    # 修改checkpoint dir
+    if args.checkpoint is not None:
+        config["training"]["missing_task"]["checkpoint_dir"] = (
+            config["training"]["missing_task"]["checkpoint_dir"]
+            + "/"
+            + dependent
+            + "/"
+            + args.data
+            + "/"
+            + str(args.checkpoint)
+            + "/best_checkpoint"
+        )
 
     return config
 
@@ -183,7 +254,10 @@ def prepare_environment(config):
     seed_all(config["seed"])
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    if config["device"] == "cuda":
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    else:
+        device = torch.device("cpu")
     return device
 
 
@@ -202,19 +276,24 @@ def load_data(config, test_person=-1):
         ex_nums=config["data"]["ex_nums"],
         mode="train",
         test_person=test_person,
-        cls_num=config["num_classes"],
-        dependent=config["training"]["dependent"],
-        n_splits=config["training"]["n_folds"],
+        config=config,
     )
     test_dataset = FeatureDataset(
         data,
         ex_nums=config["data"]["ex_nums"],
         mode="test",
         test_person=test_person,
-        cls_num=config["num_classes"],
-        dependent=config["training"]["dependent"],
-        n_splits=config["training"]["n_folds"],
+        config=config,
     )
+    flag_dataset = MissTaskDataset(
+        features=train_dataset.features,
+        labels=train_dataset.labels,
+        test_person=test_person,
+        config=config,
+    )
+    flag_dataset.process_data(data=train_dataset.features, labels=train_dataset.labels)
+    flag_dataset.process_data(data=test_dataset.features, labels=test_dataset.labels)
+
     train_loader = DataLoader(
         train_dataset,
         batch_size=config["training"]["batch_size"],
@@ -232,7 +311,7 @@ def load_data(config, test_person=-1):
 
 def initialize_model(config, device):
     """初始化模型"""
-    model = MFAFESM(config["model"])
+    model = MissMFAFESM(config["model"])
     model = model.to(device)
     return model
 
@@ -240,6 +319,12 @@ def initialize_model(config, device):
 def run(config, logger, device, test_person, history, mode="train"):
     # 加载数据
     train_loader, test_loader = load_data(config, test_person=test_person)
+
+    # 加载完数据后修改input_list，这里不对
+    config["model"]["feature_align"]["missing_input_size"][0] = (
+        train_loader.dataset.features["eeg"].shape[1]
+        * train_loader.dataset.features["eeg"].shape[-1]
+    )
 
     # 初始化模型
     model = initialize_model(config, device)
@@ -294,11 +379,12 @@ def run(config, logger, device, test_person, history, mode="train"):
         )
 
         # 保存最终模型
-        trainer.save_checkpoint(
-            Path(config["logging"]["model_dir"])
-            / f"checkpoint_{logger.timestamp}"
-            / f"checkpoint_{test_person}_{config['training']['epochs']}.pth"
-        )
+        if not config["logging"]["save_best_only"]:
+            trainer.save_checkpoint(
+                Path(config["logging"]["model_dir"])
+                / f"checkpoint_{logger.timestamp}"
+                / f"checkpoint_{test_person}_{config['training']['epochs']}.pth"
+            )
     elif mode == "infer":
         trainer.infer(config["data"], test_person)
 
@@ -339,6 +425,7 @@ def main():
 
     # 关闭日志器
     logger.close()
+
 
 if __name__ == "__main__":
     main()

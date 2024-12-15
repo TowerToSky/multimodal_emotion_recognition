@@ -30,6 +30,8 @@ add_project_root_to_sys_path()
 
 from data.LoadFeatures import DataFeatures
 from common import utils
+from models.Models import MFAFESM
+from common.process_graph import initialize_graph
 
 
 class FeatureDataset(Dataset):
@@ -39,9 +41,7 @@ class FeatureDataset(Dataset):
         ex_nums=48,
         mode="train",
         test_person=-1,
-        cls_num=2,
-        dependent=False,
-        n_splits=5,
+        config=None,
     ):
         """
         Introduction:
@@ -51,25 +51,30 @@ class FeatureDataset(Dataset):
             ex_num: 每个受试者的样本数量
             mode: 数据集模式，train/test
             test_person: 测试受试者id / 第几折
-            cls_num: 类别数量
-            dependent: 是否为跨被试实验
-            n_splits: 交叉验证折数
+            training_config: 训练配置
         """
         self.features = features.features.copy()
-        self.labels = features.label
-        self.mode = mode
-        self.cls_num = cls_num
+        self.labels = features.label.copy()
         self.ex_nums = ex_nums
         self.indices = np.arange(len(self.labels))
+        self.mode = mode
+
+        self.training_config = config["training"]
+
+        self.cls_num = config["num_classes"]
+        dependent = self.training_config["dependent"]
+        n_splits = self.training_config["n_folds"]
 
         # 二分类标签处理
-        if cls_num == 2:
+        if self.cls_num == 2:
             self.indices = self.filter_binary_labels()
 
         if dependent:
-            self.split_data_dependent(mode, n_splits, current_split=test_person)
+            self.indices = self.split_data_dependent(
+                mode, n_splits, current_split=test_person
+            )
         else:
-            self.split_data_independent(mode, test_person)
+            self.indices = self.split_data_independent(mode, test_person)
 
     def __len__(self):
         return len(self.labels)
@@ -123,6 +128,7 @@ class FeatureDataset(Dataset):
             self.split_data(test_indices)
         else:
             raise ValueError("mode should be 'train' or 'test'")
+        return train_indices, test_indices
 
     def split_data_dependent(self, mode, n_splits, current_split):
         """
@@ -148,6 +154,7 @@ class FeatureDataset(Dataset):
                 else:
                     raise ValueError("mode should be 'train' or 'test'")
                 break
+        return train_indices, test_indices
 
 
 if __name__ == "__main__":

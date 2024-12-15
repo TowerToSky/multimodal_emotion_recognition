@@ -9,6 +9,7 @@ model:
       tok: 0.5
     feature_align:
       input_size: [960, 41, 119]
+      missing_input_size: [960, 41, 119]
       embed_dim: *feature_extract_hidden_dim  # 引用 hidden_dim
       seq_len: 10
     fusion:
@@ -27,16 +28,27 @@ model:
       embed_dim: 1600  # 直接写计算结果（160 * 10）
 
 training:
-  ex_name: "full_compose_fusion" 
+  ex_name: "missing_task" 
   batch_size: 64
-  epochs: 500
+  epochs: 150
   learning_rate: 0.0001
   weight_decay: 0.002
   optimizer: "adam"
   loss_function: "cross_entropy"
   dependent: False
-  n_folds: 10
+  n_folds: 5
+  # using_modalities: ['eeg', 'eye', 'au']
   using_modalities: ['eeg', 'eye', 'pps']
+  num_classes: 3
+  missing_task:
+    batch_size: 32
+    use: True
+    checkpoint_dir: "/mnt/nvme1/yihaoyuan/Raven/RavenEx/multimodal_emotion_recognition/logs"
+
+    # checkpoint_dir: "/mnt/nvme1/yihaoyuan/Raven/RavenEx/multimodal_emotion_recognition/logs/independent/HCI/2024-12-09_20-26-19/best_checkpoint"
+    # checkpoint_dir: "/mnt/nvme1/yihaoyuan/Raven/RavenEx/multimodal_emotion_recognition/logs/independent/HCI/2024-12-09_20-26-21/best_checkpoint"
+    # checkpoint_dir: "/mnt/nvme1/yihaoyuan/Raven/RavenEx/multimodal_emotion_recognition/logs/independent/Ruiwen/2024-12-12_23-49-21/best_checkpoint"
+    # checkpoint_dir: "/mnt/nvme1/yihaoyuan/Raven/RavenEx/multimodal_emotion_recognition/logs/independent/Ruiwen/2024-12-12_23-49-26/best_checkpoint"
 
 
 data:
@@ -48,7 +60,7 @@ data:
     input_size: [960, 41, 119]
     input_dim: 75
     label_type: ""
-    num_workers: 4
+    num_workers: 3
     ch_nums: 31
     ex_nums: 48
   HCI:
@@ -58,18 +70,16 @@ data:
     input_size: [960, 38, 230]
     input_dim: 585
     label_type: "arousal"
-    num_workers: 4
+    num_workers: 3
     ch_nums: 32
     ex_nums: 20
 
 logging:
-  log_dir: "/mnt/nvme1/yihaoyuan/Raven/RavenEx/multimodal_emotion_recognition/logs"
-  model_dir: "/mnt/nvme1/yihaoyuan/Raven/RavenEx/multimodal_emotion_recognition/outputs"
+  log_dir: "/mnt/nvme1/yihaoyuan/Raven/RavenEx/cross_modality_experiment/multimodal_emotion_recognition/logs"
+  model_dir: "/mnt/nvme1/yihaoyuan/Raven/RavenEx/cross_modality_experiment/multimodal_emotion_recognition/outputs"
   save_best_only: True
 
-device:
-  gpu: True
-  gpu_ids: [0]
+device: 'cuda'
 
 seed: 42
 num_classes: 3

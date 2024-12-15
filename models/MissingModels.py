@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 # @software: Vscode
 # @project: multimodal_emotion_recognition
-# @file: Models.py
-# @time: 2024/11/25 10:52
+# @file: MissingModels.py
+# @time: 2024/12/13 19:56
 # @author: yihaoyuan
 # @email: yihy0209@163.com
-# @usage: 模型的外部框架实现
+# @usage: 面向模态缺失的特定的模型
 
 import os
 import sys
@@ -55,7 +55,7 @@ def init_weights(m):
             nn.init.zeros_(m.bias)
 
 
-class MFAFESM(nn.Module):
+class MissMFAFESM(nn.Module):
     def __init__(self, cfg: dict = None):
         """
         Introduction:
@@ -64,7 +64,7 @@ class MFAFESM(nn.Module):
         Args:
             cfg: 配置文件
         """
-        super(MFAFESM, self).__init__()
+        super(MissMFAFESM, self).__init__()
         self.cfg = cfg if cfg else {}
 
         self.feature_extract = FeatureExtract(cfg["feature_extract"])
@@ -115,7 +115,7 @@ class MFAFESM(nn.Module):
         result = self.classifier(encoded_features)
 
         result = F.log_softmax(result, dim=1)
-        return result, fused_features, encoded_features
+        return result
 
 
 class FeatureExtract(nn.Module):
@@ -135,11 +135,11 @@ class FeatureExtract(nn.Module):
         )
 
     def forward(self, adjacency, graph_indicator, eeg, eye, au, pps=None):
-        if eeg is not None:
-            eeg = eeg.view(-1, self.input_dim)
-            eeg, impor = self.feature_global(adjacency, eeg, graph_indicator)
-        else:
-            eeg = None
+        # if eeg is not None:
+        #     eeg = eeg.view(-1, self.input_dim)
+        #     eeg, impor = self.feature_global(adjacency, eeg, graph_indicator)
+        # else:
+        #     eeg = None
 
         input_features = [eeg, eye, au, pps]
 
@@ -155,7 +155,7 @@ class Embrace(nn.Module):
             EmbraceNet中Embrace模块，用于特征的对齐
         """
         super(Embrace, self).__init__()
-        self.input_size_list = cfg["input_size"]
+        self.input_size_list = cfg["missing_input_size"]
         self.seq_len = cfg["seq_len"]
         self.embed_dim = cfg["embed_dim"]
         for i, input_size in enumerate(self.input_size_list):
@@ -174,6 +174,9 @@ class Embrace(nn.Module):
         # docking layer
         docking_output_list = []
         for i, input_data in enumerate(input_list):
+            if len(input_data.size()) == 3:
+                # 调整成两维
+                input_data = input_data.view(input_data.size(0), -1)
             x = getattr(self, "docking_%d" % (i))(input_data)
             x = x.view(x.size(0), seq_len, -1)
             # if i == 0 and len(self.input_size_list) > 1:
@@ -289,6 +292,30 @@ class AFFM(nn.Module):
 
         return x
 
+    def add_fusion(self, input_list):
+        """
+        Introduction:
+            加法融合策略，即将EEG、Eye、Au三个模态信息进行加法融合
+        Args:
+            input_list: 输入数据列表，通常为EEG、Eye、Au三个模态信息
+        Returns:
+            融合后的数据
+        """
+        if len(input_list) == 3:
+            a = input_list[0]
+            b = input_list[1]
+            c = input_list[2]
+            x_1 = a + self.attention(a, b) + self.MI(b, a)
+            x_2 = a + self.attention(a, c) + self.MI(c, a)
+            x_3 = b + self.attention(b, c) + self.MI(c, b)
+            x = torch.cat([x_1, x_2, x_3], dim=2)
+            # 这儿也可以考虑加法融合
+        elif len(input_list) == 2:
+            a = input_list[0]
+            b = input_list[1]
+            x = a + self.attention(a, b) + self.MI(b, a)
+        return x
+
     def forward(self, input_list):
         """
         Introduction:
@@ -307,6 +334,8 @@ class AFFM(nn.Module):
             fusion = self.full_compose_fusion(input_list)
         elif self.model_name == "iterative_fusion":
             fusion = self.iterative_fusion(input_list)
+        elif self.model_name == "add_fusion":
+            fusion = self.add_fusion(input_list)
         # fusion = self.major_modality_fusion(input_list)
         # fusion = self.major_modality_fusion(input_list)
         # fusion = self.iterative_fusion(input_list)

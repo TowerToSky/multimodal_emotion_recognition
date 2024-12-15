@@ -1,25 +1,23 @@
-
 # Intro
 
 该文档记录一下自己在编写项目时一些思考
 
 落笔于2024-11-20 16：30
 
-
-
 # 2024-11-20 关于从原始数据到手动计算的特征处理
 
-经过简单预处理后的数据存储在'/data/Ruiwen/data_with_ICA.pkl'中，包含'eeg'、'eye'、'au'、'label'、'subject_list'，Info如下：
+经过简单预处理后的数据存储在 `'/data/Ruiwen/data_with_ICA.pkl'中，包含 `'eeg'、'eye'、'au'、'label'、'subject_list'`，Info如下：
 
-'''
+```python
 dict_keys(['label', 'subject_list', 'ch_info', 'info', 'eye_info', 'eeg', 'eye', 'au'])
 EEG: 1-70filer, 50Hz notch, With ICA, 256Hz resample;
 Subject : 1-34 subject, no 1,23,32 subject, 15 subject exists eye data missing; 31 person, 48 question, 31 channel;
 Labels : 0: Confused,1: Guess, 2:Unconfused, 4: Think-right;
 Eye Track data : Pupil diameter left, Pupil diameter right,Gaze point X, Gaze point Y, Eye movement type, Gaze event duration
 ['Fp1', 'F3', 'F7', 'FT9', 'FC5', 'FC1', 'C3', 'T7', 'TP9', 'CP5', 'CP1', 'Pz', 'P3', 'P7', 'O1', 'Oz', 'O2', 'P4', 'P8', 'TP10', 'CP6', 'CP2', 'Cz', 'C4', 'T8', 'FT10', 'FC6', 'FC2', 'F4', 'F8', 'Fp2']
-[2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 24, 25, 26, 27, 28, 29, 30, 31, 33, 34]
-'''
+[2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 24, 25, 26, 27, 28, 29, 30, 31, 33, 34]python
+
+```
 
 > 注意这里没有将AU的信息记录在Info中，后续进行补充。
 
@@ -38,7 +36,6 @@ Eye Track data : Pupil diameter left, Pupil diameter right,Gaze point X, Gaze po
 17：19更新：重复上述步骤有点麻烦，压力有点大，就先按照之前方式，直接加载预先处理好的数据来用
 
 人脸特征，唔，其实存储的原生数据已经是计算后的特征了，而不是原始AU强度点，算了，不管了，直接跟眼动一并处理
-
 
 17:30更新：已经完成对特征加载代码部分编写，编写于LoadFeatures.py下，接下来将读取到的特征数据，封装成torch.Dataset形式，然后划分训练集和测试集，训练集和测试集划分还是先以留一人交叉验证方式（后续补充跨被试实验，用于丰富文章内容）
 
@@ -73,14 +70,12 @@ Eye Track data : Pupil diameter left, Pupil diameter right,Gaze point X, Gaze po
 
 按Copliate给出的代码，其为个人：特征的字典，算了，还是参考之前的方式去做
 
-
 考虑一下此时各个特征的形状：
 
 脑电：(1488, 31, 5\*15)
 眼动：(1488, 41)
 人脸：(1488, 115)
 标签：(1488, )
-
 
 23：41，逻辑通畅了，明天检查一下是否有BUG，然后就可以着手搭建模型了，争取这周修改一版模型，然后训练出一个结果出来。
 
@@ -102,7 +97,7 @@ init_weight这种初始化权重方式在开源库中都会存在，说明存在
 
 先起名字吧，不然模型不好起名，由AFFM+Transformer结合而出，AFFM名字为Adaptive Feature Fusion Model
 
-多模态注意力特征融合情绪识别策略：Multi-Modal Feature Attention Fusion Encoder strategy 
+多模态注意力特征融合情绪识别策略：Multi-Modal Feature Attention Fusion Encoder strategy
 
 然后将模型模块化，包含特征提取模型、特征对齐模型、特征融合模型、特征编码模型、分类模型
 
@@ -191,7 +186,6 @@ x_2 = self.attention(x_2, au) + self.MI(au, x_2)
 
 x_3 = concat(eeg, x_2)
 
-
 混淆矩阵和Norm后续再考虑吧，反正现在能训起来了
 
 # 2024-11-28 10:15，跑通了，添加Norm，优化日志，添加可视化和结果处理
@@ -234,20 +228,20 @@ Norm逻辑传参错了可还行，已修改。
 
  首先是还原之前的结果，最终我应该拿到的输出结果为，每个人测试集上的最高准确率，以及其平均准确率，输出结果应该输出到一个文本文档或表格中加以记录TODO
 
- # 2024-12-03 18:52, 补全输出配置和结果到统一文件的管理
+# 2024-12-03 18:52, 补全输出配置和结果到统一文件的管理
 
  拖得有点久了，这个不是很难的工作，直接完成，然后把训练任务跑上吧，然后再在公开库进行算法检验，这个将其数据提取做好就行。
 
  首先是配置文件的逐级拆解，设计为均拆解成一列的形式进行存储。
 
  然后修复Std的计算逻辑
- 
+
  20:33，已修复，费时1.5h，hh，有点浪费时间了，测试一波
 
- # 2024-12-04 11:25 修复保存历史训练记录的bug，开启大规模实验
+# 2024-12-04 11:25 修复保存历史训练记录的bug，开启大规模实验
 
  修复了保存config和metric到同一csv文件便于后续统一查看和管理，测试中
- 
+
  每次都要创建一个excel文件，这不大行
 
  考虑的场景也就是在跨被试和非跨被试实验中，会考虑不同人的情况，不行的话分别定义一个文件来做记录（再调试一下就看看当前这个情况）
@@ -258,7 +252,7 @@ Norm逻辑传参错了可还行，已修改。
 
  大规模实验受限于CPU的限制，明天迁移到其他机子上再跑一些公开库的实验（这部分结果缺失）
 
- # 2024-12-05 11：40 竟然能跑完欸
+# 2024-12-05 11：40 竟然能跑完欸
 
  昨天晚上20:30跑的，今天11：40发现已经到30个人了，那么12点能跑完，也就是说总共跑了12+3.5=15.5个小时，也还行。还行个damm，数据量少的单模态跑完了，数据量多的比如说三模态，才跑到第15个人，这得跑到什么时候，今晚12点或者明早才能看到结果，可能程序有问题，但是不想调了，多启用几个机器在跑吧
 
@@ -299,7 +293,7 @@ eye:(24, 20, 38)，pps:(24, 20, 230)
 HCI有分类有两个维度，分别是arousal以及valence，分别对应不同的标签，为420，标签均为{0，1，2}，即三分类
 
 ```
-Labels :    
+Labels :  
     Arousal: 0:[\"Sadness\", \"Disgust\", \"Neutral\"]、
             1:[\"Joy, Happiness\", \"Amusement\"] 
             2:[\"Surprise\", \"Fear\", \"Anger\", \"Anxiety\"]\n\
@@ -309,6 +303,7 @@ Labels :
             2:[\"Joy, Happiness\", \"Amusement\"]\n\
 
 ```
+
 保存数据于"/data/MAHNOB/hci_data.pkl"
 
 ```python
@@ -330,7 +325,6 @@ Eye Track data : DistanceLeft，PupilLeft，ValidityLeft，Distance Right，Pupi
 
 ```
 
-
 64*585，de的特征读取存在问题
 
 # 2024-12-07 解决HCI bug，跑通实验
@@ -345,7 +339,6 @@ Eye Track data : DistanceLeft，PupilLeft，ValidityLeft，Distance Right，Pupi
 
 HCI能跑通了，不知道结果会怎么样，考虑看看其他的数据集，多跑几组实验。
 
-
 # 2024-12-08 处理DEAP、添加模态缺失实验
 
 继续对DEAP数据集进行处理，处理成可供训练的形式
@@ -355,13 +348,12 @@ HCI能跑通了，不知道结果会怎么样，考虑看看其他的数据集�
 今日要做项：
 
 * 整理HCI的结果
-* DEAP数据集处理和训练 
+* DEAP数据集处理和训练
 * 跨模态的实验代码和跑通
 * 论文内容撰写，撰写第4和第6章
 * 考虑绘图的代码，绘制一些图，这个在撰写论文中设计要放什么图
 
 ## DEAP数据集
-
 
 DEAP数据集可以搞一下，在/data/zhanggt/DEAP下，有eeg和pps特征，并且pps特征已经被提取出来了。
 
@@ -400,17 +392,13 @@ pps数据包含：
 梳理一下自己的实验思路：
 
 1. 设置为跨模态实验，标记脑电模态缺失
-
 2. 加载预训练好的模型，根据已有的数据，从中取出一小批数据，送入到预训练网络代表中间状态，
-
 3. 然后根据中间状态去结合其余的假设脑电数据缺失状态下的数据继续训练，用于模拟脑电模态缺失，
-
 4. 然后在预测过程中，同样结合这一批数据取得已经预训练好的网络的中间融合状态，用于在测试集上融合预测。
 
 难点：
 
 1. 加载预训练好的模型
-
 2. 小批数据的设置大小，暂定64，抽取数据采用随机采样的方式（这里也可以考虑下类别均衡性，即对每个类别加权来抽取数据，或者用过采样方式），然后固定这批数据，在每次训练和推理过程中都是采用这批数据（要么复制，要么替换）
 
 # 2024-12-09 设计下消融实验，集中在模态融合策略上
@@ -421,24 +409,18 @@ pps数据包含：
 
 接下来验证语义扩展的消融实验研究，即seq_len多大会比较合适（感觉这个与特征的大小有关系，当特征多的时候，更大的语义扩展能更好的表征特征，然而较小的特征数量若进行较大的语义拓展容易产生噪声干扰，比如说pps的影响），既然说seq_len * d_model会产生影响，那么d_model设置一个较小的值，emmm，但这样的话对于融合以及编码模块的d_model会变小，所以可能探究seq_len以及d_model的最佳配比组合。因为后续融合以及编码模块的d_model受d_model以及seq_len的影响，所以要改需要一起改。
 
-
 所以得出来的结论为探究d_model以及seq_len的最佳配比.
+
 ## TODO
+
 （虽然知道要做，但还是有点不想做qwq，这个关于消融seq_len的设置，等写完跨模态任务后再做这块儿吧）
 
-## 跨模态代码的编写
-按照大论文的思路去编写这部分的实验代码
-
-代码逻辑为定义两个模型，一个用于训练，一个用于
-
-# 2024-12-10 消融seq_len的最佳设置
+# 2024-12-11 消融seq_len的最佳设置
 
 采用渐进式搜索策略，考虑到参数量，计算时间影响，（待会儿画个图）
 
 1. 固定d_model 搜索seq_len
-
 2. 找到合适seq_len后，小范围搜索d_model
-
 3. 精细化进一步搜索
 
 注意设置seq_len考虑输入的维度大小，确保d_model * seq_len要大于最大的特征大小，即大于960，即当d_model为160时，seq_len至少大于6
@@ -447,4 +429,162 @@ pps数据包含：
 
 后续再去考虑d_model搜索不受高天论文的影响，进行更大范围的搜索。
 
-seq_len设置搜索范围为6，8，10, 12，16，这下对于Arousal和Valence将会有4*2=8组实验，显存和cpu占用还是可以接受的范围，CPU已经拉满了qwq，那么一次实验最好不要超过10组
+seq_len设置搜索范围为 `6，8，10, 12，16`，这下对于Arousal和Valence将会有 `4*2=8`组实验，显存和cpu占用还是可以接受的范围，CPU已经拉满了qwq，那么一次实验最好不要超过10组
+
+## 跨模态代码的编写
+
+按照大论文的思路去编写这部分的实验代码
+
+代码逻辑为定义两个模型，一个用于训练，一个用于
+
+这代表性数据，用什么逻辑去获取呢，是以类的形式表示，还是以中间变量形式表示？
+
+当前模态缺失模型接受的其他输入均不变，唯一变动即EEG的输入改成了预训练模型的中间输出，也就是说拿到的输入向量为 `（B，seq_len，d_model * 2 * 3 ）`，其维度与其他模态维度不同，所以也要经过Embrace模块来对齐模态
+
+HCI库跑完一次实验需要8个小时。
+
+时间不多情况下，还是以面向过程的思想快速实现代码逻辑，直接在另一个代码空间内去改写适配跨模态任务，快速跑通为好，同时避免干涉到主任务。
+
+加载数据时逻辑改写一下，模型计算逻辑改写一下，其他部分不需要改动就可以了。
+
+添加一个加载checkpoints功能函数。
+
+TODO：对齐的设置中，投影维度大小设置需要考虑，既要避免信息冗余，也要避免信息丢失。
+
+寻找一小批代表数据时，避免测试集暴露，所以在划分测试集和训练集后
+
+所以在加载测试集时，同时加载
+
+加载了checkpoints后也要初始化模型，但不需要初始化优化器
+
+模型的keys是个有序字典，
+
+```
+
+
+dict_keys(['epoch', 'model_state_dict', 'optimizer_state_dict'])
+feature_extract.feature_global.gcn1.weight torch.Size([585, 160])
+feature_extract.feature_global.gcn1.bias torch.Size([160])
+feature_extract.feature_global.gcn2.weight torch.Size([160, 160])
+feature_extract.feature_global.gcn2.bias torch.Size([160])
+feature_extract.feature_global.gcn3.weight torch.Size([160, 160])
+feature_extract.feature_global.gcn3.bias torch.Size([160])
+feature_extract.feature_global.pool.attn_gcn.weight torch.Size([480, 1])
+feature_extract.feature_global.pool.attn_gcn.bias torch.Size([1])
+feature_align.docking_0.weight torch.Size([1600, 960])
+feature_align.docking_0.bias torch.Size([1600])
+feature_align.docking_1.weight torch.Size([1600, 38])
+feature_align.docking_1.bias torch.Size([1600])
+feature_align.docking_2.weight torch.Size([1600, 230])
+feature_align.docking_2.bias torch.Size([1600])
+fusion.attention.q.weight torch.Size([16, 160, 1])
+fusion.attention.k.weight torch.Size([16, 160, 1])
+fusion.attention.v.weight torch.Size([16, 160, 1])
+fusion.attention.up.weight torch.Size([160, 16, 1])
+fusion.fn.weight torch.Size([960, 960])
+fusion.fn.bias torch.Size([960])
+attention_encoder.encoder_layer.0.norm_1.alpha torch.Size([960])
+attention_encoder.encoder_layer.0.norm_1.bias torch.Size([960])
+attention_encoder.encoder_layer.0.norm_2.alpha torch.Size([960])
+attention_encoder.encoder_layer.0.norm_2.bias torch.Size([960])
+attention_encoder.encoder_layer.0.attn.q.weight torch.Size([120, 960, 1])
+attention_encoder.encoder_layer.0.attn.k.weight torch.Size([120, 960, 1])
+attention_encoder.encoder_layer.0.attn.v.weight torch.Size([120, 960, 1])
+attention_encoder.encoder_layer.0.attn.up.weight torch.Size([960, 120, 1])
+attention_encoder.encoder_layer.0.ff.linear_1.weight torch.Size([2048, 960])
+attention_encoder.encoder_layer.0.ff.linear_1.bias torch.Size([2048])
+attention_encoder.encoder_layer.0.ff.linear_2.weight torch.Size([960, 2048])
+attention_encoder.encoder_layer.0.ff.linear_2.bias torch.Size([960])
+attention_encoder.encoder_layer.5.norm_1.alpha torch.Size([960])
+attention_encoder.encoder_layer.5.norm_1.bias torch.Size([960])
+attention_encoder.encoder_layer.5.norm_2.alpha torch.Size([960])
+attention_encoder.encoder_layer.5.norm_2.bias torch.Size([960])
+attention_encoder.encoder_layer.5.attn.q.weight torch.Size([120, 960, 1])
+attention_encoder.encoder_layer.5.attn.k.weight torch.Size([120, 960, 1])
+attention_encoder.encoder_layer.5.attn.v.weight torch.Size([120, 960, 1])
+attention_encoder.encoder_layer.5.attn.up.weight torch.Size([960, 120, 1])
+attention_encoder.encoder_layer.5.ff.linear_1.weight torch.Size([2048, 960])
+attention_encoder.encoder_layer.5.ff.linear_1.bias torch.Size([2048])
+attention_encoder.encoder_layer.5.ff.linear_2.weight torch.Size([960, 2048])
+attention_encoder.encoder_layer.5.ff.linear_2.bias torch.Size([960])
+attention_encoder.fn.0.weight torch.Size([160, 960])
+attention_encoder.fn.0.bias torch.Size([160])
+classifier.classfier.1.weight torch.Size([3, 1600])
+classifier.classfier.1.bias torch.Size([3])
+
+```
+
+有点意思哈，分析权重分布，可以发现浅层的encoder拥有较为尖锐的分布，参数值较大，而深层的参数，更好保持模型互补性，所以选用深层的FNN输出可能会更好些
+
+attn后有一个fn层，用于映射到embed维度上
+
+看热图并不能看出来什么特别的规律出来，不管是浅层还是深层都具有较大的激活值，模型都处于激活状态，相对来说深层的看起来更加稀疏一点。算了不管了，继续设计实验。
+
+看起来今天晚上把跨模态实验是跑不完了，那就去做一下消融实验超参搜索去。
+
+# 2024-12-12 完成跨模态实验代码
+
+今天必须得把实验代码写出来并且跑上，不然时间真不够用了，后续还有消融实验要跑，还有绘图要画。
+
+14：49，还在跑消融实验中，占用CPU过多，不太适合去写代码，先去撰写论文，等消融实验跑完再来继续编写跨模态实验代码，大概要4-5个小时后看训练进度来看qwq，好久哇，后续还得再重新跑一遍Raven多模态融合结果，先去写论文吧
+
+# 2024-12-13 真的要完成了跨模态实验代码
+
+昨天实验跑的有点久，所以今天集中把实验代码完成，然后跑个结果，我承认有赌的成分，结果不好再另说，单眼动的结果过高了qwq
+
+上次任务进度：集中在Dataset中，处理缺失任务的数据
+
+拿到中间输出后：
+
+print(result.shape)torch.Size([63, 3])
+
+print(fused_features.shape)torch.Size([63, 10, 960])
+
+print(encoded_features.shape)torch.Size([63, 10, 160])
+
+后面两个可以作为直接的数据输入输入到AFFM中进行融合
+
+注意获取标志性数据是否需要对其进行打乱顺序，其实打不打乱都可以
+
+后续在脑电模态缺失情况下，模型接受的脑电输入仅为这一组代表性输入的随机采样。
+
+如果说这样取得一小批代表性数据的中间输入作为解决方案，那么为什么不是从原先训练过程中随机一小批数据来作为缺失输入呢？（这也作为一类消融实验，即一小批代表数据的来源）
+
+重构Model，创建新的Model专门适配当前模态缺失的场景的模型
+
+现在做的是直接拿到encoded_features作为融合的输入，那么形状为[63, 10, 160]，为了统一一下还是送入到特征对齐模块中进行特征对齐。
+
+那么特征对齐模块接收的输入为N，D
+
+模态接受输入，miss_data,代表缺失的模态，主要替换脑电模态，其他操作正常进行，而在特征提取后，将脑电模态数据拼接上去。
+
+但是需要考虑Embrace中的对齐形状会发生改变，这个后续初始化缺失模型时，再做指定
+
+假设继续从上述实验思想中继续模拟现在这个情况，那么现在存在问题即标签不匹配的问题，那么采用从小搓数据中随机采样对应的数据构成新的数据。还有一种思路，即只需要从原有数据集中随机采样类别数目的数据，这样能够借助这部分数据提供一种感知能力，来指导模型学习，即这种代表模态缺失。
+
+代表性数据来自于训练集，那么设置测试集时，代表性数据同样应该来自于训练集。那么这块儿，该怎么做呢
+
+创建一个类，代表一小撮数据，后续取代表数据，构建一个函数，用于传入输入的label，然后根据label从小搓数据中随机抽取对应的数据
+
+明天上午能把代码写完，实验跑上，然后开始写论文！！！
+
+任务存档：MissTaskData的编写，重新构建
+
+
+# 2024-12-14 构建跨模态实验
+
+
+大记忆恢复术：昨天完成到了在Dataset类中取每一个元素时，替换eeg数据为代表性的融合数据，结果因为总是卡住，所以考虑在外部完成一个batch的数据的替换处理，因此定义了一个MissTaskData，用于加载和存储这一小批代表性中间数据，并且定义一个函数处理面临一个batch数据（划掉，这样效率太慢），对划分好后的训练集和测试集数据，将其中脑电数据替换成中间数据，一次处理，正常加载。
+
+
+因此现在工作流为：
+
+1. MissTaskData构建：
+   1. 从训练集中随机抽样每类代表性的为num个，共计cls_num * num个数据用于构建，
+   2. 然后加载预训练模型，对于代表性数据从预训练模型中获取中间状态
+   3. 存储中间状态数据和标签组合
+2. MissTaskData处理训练过程数据：对于trainSet数据，以及testSet数据，将其中EEG替换成中间数据
+   1. 传入data和label：根据label从已经建立好的随机抽取对应的，获取索引
+   2. 根据索引获取中间数据，然后替换EEG数据？（这个，可以把GCN注释掉，或者可以考虑用GCN来做进一步的特征提取TODO）
+   3. 数据处理完了，接下来是模型计算过程
+3.
