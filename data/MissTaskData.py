@@ -55,8 +55,8 @@ class MissTaskDataset:
             test_person: 测试人员
             config: 配置文件
         """
-        self.features = features.copy()
-        self.labels = labels.copy()
+        self.features = copy.deepcopy(features)
+        self.labels = copy.deepcopy(labels)
         self.test_person = test_person
 
         self.data_config = config["data"]

@@ -53,8 +53,8 @@ class FeatureDataset(Dataset):
             test_person: 测试受试者id / 第几折
             training_config: 训练配置
         """
-        self.features = features.features.copy()
-        self.labels = features.label.copy()
+        self.features = copy.deepcopy(features.features)
+        self.labels = copy.deepcopy(features.label)
         self.ex_nums = ex_nums
         self.indices = np.arange(len(self.labels))
         self.mode = mode

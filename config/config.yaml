@@ -43,9 +43,9 @@ training:
   missing_task:
     batch_size: 32
     use: True
-    checkpoint_dir: "/mnt/nvme1/yihaoyuan/Raven/RavenEx/multimodal_emotion_recognition/logs"
+    # checkpoint_dir: "/mnt/nvme1/yihaoyuan/Raven/RavenEx/multimodal_emotion_recognition/logs"
 
-    # checkpoint_dir: "/mnt/nvme1/yihaoyuan/Raven/RavenEx/multimodal_emotion_recognition/logs/independent/HCI/2024-12-09_20-26-19/best_checkpoint"
+    checkpoint_dir: "/mnt/nvme1/yihaoyuan/Raven/RavenEx/multimodal_emotion_recognition/logs/independent/HCI/2024-12-09_20-26-19/best_checkpoint"
     # checkpoint_dir: "/mnt/nvme1/yihaoyuan/Raven/RavenEx/multimodal_emotion_recognition/logs/independent/HCI/2024-12-09_20-26-21/best_checkpoint"
     # checkpoint_dir: "/mnt/nvme1/yihaoyuan/Raven/RavenEx/multimodal_emotion_recognition/logs/independent/Ruiwen/2024-12-12_23-49-21/best_checkpoint"
     # checkpoint_dir: "/mnt/nvme1/yihaoyuan/Raven/RavenEx/multimodal_emotion_recognition/logs/independent/Ruiwen/2024-12-12_23-49-26/best_checkpoint"
