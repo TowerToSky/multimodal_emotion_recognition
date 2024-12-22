@@ -165,6 +165,14 @@ class Embrace(nn.Module):
                 nn.Linear(input_size, self.embed_dim * self.seq_len),
             )
 
+        # 添加相对位置编码
+        self.relative_position = nn.ParameterList(
+            [
+                nn.Parameter(torch.zeros(1, self.seq_len, self.embed_dim))
+                for _ in range(len(self.input_size_list))
+            ]
+        )
+
     def forward(self, input_list):
         assert len(input_list) == len(
             self.input_size_list
@@ -176,6 +184,10 @@ class Embrace(nn.Module):
         for i, input_data in enumerate(input_list):
             x = getattr(self, "docking_%d" % (i))(input_data)
             x = x.view(x.size(0), seq_len, -1)
+
+            # 添加相对位置编码
+            x = x + self.relative_position[i]
+
             # if i == 0 and len(self.input_size_list) > 1:
             #     seq_len = seq_len // (len(self.input_size_list) - 1)
 
@@ -218,6 +230,7 @@ class AFFM(nn.Module):
         a = input_list[0]
         b = input_list[1]
         x_1 = torch.concat([a, self.attention(a, b) + self.MI(b, a)], dim=2)
+        # 感觉这块儿不该改的，因为这块儿是为了保证模型的一致性，有时间该回去吧，当作消融实验了
         x_2 = torch.concat([b, self.attention(b, a) + self.MI(a, b)], dim=2)
         x = torch.concat([x_1, x_2], dim=2)
         return x

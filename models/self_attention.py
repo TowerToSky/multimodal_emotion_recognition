@@ -11,7 +11,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-
 class EncoderLayer(nn.Module):
     def __init__(self, d_model, heads=4, d_ff=2048, dropout=0.1) -> None:
         super().__init__()
@@ -176,3 +175,4 @@ class Norm(nn.Module):
             self.bias,
         )
         return norm
+

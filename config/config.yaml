@@ -5,47 +5,75 @@ model:
     type: "iterative_fusion"
     feature_extract:
       input_dim: 75
-      hidden_dim: &feature_extract_hidden_dim 160  # 定义锚点
+      hidden_dim: &maffm_fe_dim 160  # 定义锚点
       tok: 0.5
     feature_align:
       input_size: [960, 41, 119]
       missing_input_size: [960, 41, 119]
-      embed_dim: *feature_extract_hidden_dim  # 引用 hidden_dim
+      embed_dim: *maffm_fe_dim  # 引用 hidden_dim
       seq_len: 10
     fusion:
-      embed_dim: *feature_extract_hidden_dim  # 引用 hidden_dim
+      embed_dim: *maffm_fe_dim  # 引用 hidden_dim
       num_heads: 8
-      d_model: *feature_extract_hidden_dim
+      d_model: *maffm_fe_dim
     attention_encoder:
       num_layers: 6
-      d_model: *feature_extract_hidden_dim  # 由于不能在 YAML 中进行算术计算，这里直接写结果
+      d_model: *maffm_fe_dim  # 由于不能在 YAML 中进行算术计算，这里直接写结果
       num_heads: 8
       d_ff: 2048
       dropout: 0.1
-      embed_dim: *feature_extract_hidden_dim  # 引用 hidden_dim
+      embed_dim: *maffm_fe_dim  # 引用 hidden_dim
     classifier:
-      nb_classes: 2
+      num_classes: 2
       embed_dim: 1600  # 直接写计算结果（160 * 10）
+  CTFN:
+    feature_extract:
+      input_dim: 75
+      hidden_dim: 160  # 定义锚点
+      tok: 0.5
+    feature_align:
+      input_size: [960, 41, 119]
+      missing_input_size: [960, 41, 119]
+      embed_dim: 160  # 引用 hidden_dim
+      seq_len: 1
+    doubleTrans:
+      embed_dim: 160  # 引用 hidden_dim
+      input_size: [960, 41, 119]
+      seq_len: 1
+      num_heads: 8
+      d_model: 160
+      num_layer: 3
+      dim_forward: 2048
+      alpha: 0.5
+      p: 0.3
+    classifier:
+      num_layers: 6
+      num_heads: 8
+      d_ff: 2048
+      dropout: 0.3
+      embed_dim: 160  
+      num_classes: 2
+      d_model: 160 
 
 training:
-  ex_name: "missing_task" 
+  ex_name: "CTFN task" 
   batch_size: 64
-  epochs: 150
+  epochs: 500
   learning_rate: 0.0001
   weight_decay: 0.002
   optimizer: "adam"
   loss_function: "cross_entropy"
   dependent: False
-  n_folds: 5
+  n_folds: 10
   # using_modalities: ['eeg', 'eye', 'au']
   using_modalities: ['eeg', 'eye', 'pps']
   num_classes: 3
   missing_task:
     batch_size: 32
     use: True
-    # checkpoint_dir: "/mnt/nvme1/yihaoyuan/Raven/RavenEx/multimodal_emotion_recognition/logs"
+    checkpoint_dir: "/mnt/nvme1/yihaoyuan/Raven/RavenEx/multimodal_emotion_recognition/logs"
 
-    checkpoint_dir: "/mnt/nvme1/yihaoyuan/Raven/RavenEx/multimodal_emotion_recognition/logs/independent/HCI/2024-12-09_20-26-19/best_checkpoint"
+    # checkpoint_dir: "/mnt/nvme1/yihaoyuan/Raven/RavenEx/multimodal_emotion_recognition/logs/independent/HCI/2024-12-09_20-26-19/best_checkpoint"
     # checkpoint_dir: "/mnt/nvme1/yihaoyuan/Raven/RavenEx/multimodal_emotion_recognition/logs/independent/HCI/2024-12-09_20-26-21/best_checkpoint"
     # checkpoint_dir: "/mnt/nvme1/yihaoyuan/Raven/RavenEx/multimodal_emotion_recognition/logs/independent/Ruiwen/2024-12-12_23-49-21/best_checkpoint"
     # checkpoint_dir: "/mnt/nvme1/yihaoyuan/Raven/RavenEx/multimodal_emotion_recognition/logs/independent/Ruiwen/2024-12-12_23-49-26/best_checkpoint"

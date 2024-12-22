@@ -184,7 +184,7 @@ class MissTaskDataset:
         # 保存中间数据
         flag_data = {}
         for modality, feature in self.features.items():
-            flag_data[modality] = feature[selected_indices].copy()
+            flag_data[modality] = copy.deepcopy(feature[selected_indices])
         eeg, eye, au = self._process_input(flag_data)
 
         with torch.no_grad():
