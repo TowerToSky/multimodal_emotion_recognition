@@ -126,18 +126,19 @@ class Trainer:
         self.msafesm_model = self.model[0]
         self.ctfn = self.model[1]
         # 冻结逻辑
-        checkpoint_path = os.path.join(
-            self.model_config["MFAFESM"]["checkpoint_dir"],
-            f"best_checkpoint_{str(test_person)}.pth",
-        )
-        self.msafesm_model.load_state_dict(
-            torch.load(checkpoint_path)["model_state_dict"]
-        )
+
         if self.train_config["stage"] == 1:
             # 冻结msafesm
-            self.msafesm_model.eval()
-            for param in self.msafesm_model.parameters():
-                param.requires_grad = False
+            checkpoint_path = os.path.join(
+                self.model_config["MFAFESM"]["checkpoint_dir"],
+                f"best_checkpoint_{str(test_person)}.pth",
+            )
+            self.msafesm_model.load_state_dict(
+                torch.load(checkpoint_path)["model_state_dict"]
+            )
+            # self.msafesm_model.eval()
+            # for param in self.msafesm_model.parameters():
+            #     param.requires_grad = False
         else:
             # 冻结ctfn
             checkpoint_path = os.path.join(
@@ -145,6 +146,9 @@ class Trainer:
                 f"best_checkpoint_{str(test_person)}.pth",
             )
             pretrain_ctfn = torch.load(checkpoint_path)
+            msafesm_model = pretrain_ctfn[0]
+            self.msafesm_model.load_state_dict(msafesm_model.state_dict())
+
             pretrain_ctfn = pretrain_ctfn[1]
             for model, pretrain_model in zip(self.ctfn, pretrain_ctfn):
                 model.load_models(pretrain_model)

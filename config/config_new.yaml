@@ -26,8 +26,8 @@ model:
     classifier:
       nb_classes: 2
       embed_dim: 1600  # 直接写计算结果（160 * 10）
-    checkpoint_dir: "/mnt/nvme1/yihaoyuan/Raven/RavenEx/multimodal_emotion_recognition/logs/independent/HCI/2024-12-09_20-26-19/best_checkpoint"
-    # checkpoint_dir: "/mnt/nvme1/yihaoyuan/Raven/RavenEx/multimodal_emotion_recognition/logs/"
+    # checkpoint_dir: "/mnt/nvme1/yihaoyuan/Raven/RavenEx/multimodal_emotion_recognition/logs/independent/HCI/2024-12-09_20-26-19/best_checkpoint"
+    checkpoint_dir: "/mnt/nvme1/yihaoyuan/Raven/RavenEx/multimodal_emotion_recognition/logs/"
   CTFN:
     doubleTrans:
       embed_dim: 160  # 引用 hidden_dim
@@ -45,11 +45,11 @@ training:
   ex_name: "CTFN new task" 
   mode: "train"
   # mode: "infer"
-  stage: 2
+  stage: 1
   batch_size: 64
-  epochs: 100
+  epochs: 500
   learning_rate: 0.0001
-  weight_decay: 0.002
+  weight_decay: 0.002           
   optimizer: "adam"
   loss_function: "cross_entropy"
   dependent: False
