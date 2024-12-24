@@ -213,7 +213,7 @@ def find_nearest_folder(path):
 
 def load_config(cfg_path):
     if cfg_path is None:
-        cfg_path = "config.yaml"
+        cfg_path = "config_new.yaml"
     with open(
         cfg_path,
         "r",
@@ -285,6 +285,7 @@ def history2df(history):
                 data["acc"],
                 data["loss"],
                 data["f1-score"],
+
                 cm_str,
             ]
         )

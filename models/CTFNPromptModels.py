@@ -191,19 +191,13 @@ class ModalityAlign(nn.Module):
 
 
 class DoubleTrans(object):
-    def __init__(
-        self,
-        config,
-        input_dim,
-        device,
-        p=0.1,
-    ):
+    def __init__(self, config, device, p=0.1, alpha=0.5):
         self.lr = config["lr"]
         d_model = config["d_model"]
         num_head = config["num_heads"]
         num_layer = config["num_layer"]
         dim_forward = config["dim_forward"]
-        self.alpha = config["alpha"]
+        self.alpha = alpha
         seq_len = config["seq_len"]
         p = config["p"]
 
@@ -227,6 +221,8 @@ class DoubleTrans(object):
             dropout=p,
         )
 
+        self.se_fusion = SENetFusion(d_model).to(device)
+
         weight_decay = 2e-3
         self.g12_optimizer = torch.optim.Adam(
             self.g12.parameters(), self.lr, weight_decay=weight_decay
@@ -238,14 +234,20 @@ class DoubleTrans(object):
         self.g21.to(device)
 
     def get_params(self):
-        return list(self.g12.parameters()) + list(self.g21.parameters())
+        return (
+            list(self.g12.parameters())
+            + list(self.g21.parameters())
+            + list(self.se_fusion.parameters())
+        )
 
     def return_models(self):
-        return [self.g12, self.g21]
+        return [self.g12, self.g21, self.se_fusion]
 
     def load_models(self, checkpoint):
-        self.g12.load_state_dict(checkpoint[0].state_dict())
-        self.g21.load_state_dict(checkpoint[1].state_dict())
+        model = checkpoint.return_models()
+        self.g12.load_state_dict(model[0].state_dict())
+        self.g21.load_state_dict(model[1].state_dict())
+        self.se_fusion.load_state_dict(model[2].state_dict())
 
     def reset_grad(self):
         self.g12_optimizer.zero_grad()
@@ -258,6 +260,41 @@ class DoubleTrans(object):
     def grad_step(self):
         self.g12_optimizer.step()
         self.g21_optimizer.step()
+
+    def single_generate(self, source):
+        self.reset_grad()
+        self.g12.eval()
+        self.g21.eval()
+        with torch.no_grad():
+            fake_target, bimodal_12 = self.g12(source)
+            reconst_source, bimodal_21 = self.g21(fake_target)
+        return fake_target, reconst_source, bimodal_12, bimodal_21
+
+    def freeze(self):
+        self.g12.eval()
+        self.g21.eval()
+        self.se_fusion.eval()
+        for param in self.g12.parameters():
+            param.requires_grad = False
+        for param in self.g21.parameters():
+            param.requires_grad = False
+        for param in self.se_fusion.parameters():
+            param.requires_grad = False
+
+    def double_fusion_se(self, source, target, need_grad=False):
+        self.reset_grad()
+        if need_grad:
+            fake_target, bimodal_12 = self.g12(source)
+            fake_source, bimodal_21 = self.g21(target)
+            fusion = self.se_fusion(bimodal_12[-1], bimodal_21[-1])
+        else:
+            self.g12.eval()
+            self.g21.eval()
+            with torch.no_grad():
+                fake_target, bimodal_12 = self.g12(source)
+                fake_source, bimodal_21 = self.g21(target)
+                fusion = self.se_fusion(bimodal_12[-1], bimodal_21[-1])
+        return fake_source, fake_target, bimodal_12, bimodal_21, fusion
 
     def double_fusion(self, source, target, need_grad=False):
         self.reset_grad()
@@ -342,3 +379,124 @@ class EmotionClassificationModel(nn.Module):
         out = self.out(last_hs_proj)
 
         return out
+
+
+class AttentionFusion(nn.Module):
+    def __init__(self, input_dim, hidden_dim):
+        """
+        初始化注意力融合模块
+
+        Args:
+        - input_dim: 输入向量的特征维度（即160）
+        - hidden_dim: 注意力机制中间层的维度
+        """
+        super(AttentionFusion, self).__init__()
+
+        # 定义一个用于计算注意力权重的前馈神经网络
+        self.attention_layer = nn.Sequential(
+            nn.Linear(input_dim, hidden_dim),  # 输入映射到hidden_dim
+            nn.ReLU(),  # 激活函数
+            nn.Linear(hidden_dim, 1),  # 输出一个标量作为注意力权重
+        )
+
+    def forward(self, x1, x2):
+        """
+        执行前向传播，基于注意力融合x1和x2
+
+        Args:
+        - x1: 第一个输入张量，形状为 (B, 10, 160)
+        - x2: 第二个输入张量，形状为 (B, 10, 160)
+
+        Returns:
+        - output: 融合后的输出，形状为 (B, 10, 160)
+        """
+        # 计算注意力权重，x1和x2的形状为 (B, 10, 160)
+        attention_weights = self.attention_layer(x1)  # 形状为 (B, 10, 1)
+
+        # 使用softmax归一化注意力权重
+        attention_weights = F.softmax(attention_weights, dim=1)  # (B, 10, 1)
+
+        # 将注意力权重应用到x2
+        weighted_x2 = attention_weights * x2  # (B, 10, 160)
+
+        # 融合x1和加权后的x2
+        output = x1 + weighted_x2  # 形状为 (B, 10, 160)
+
+        return output
+
+
+class SENetFusion(nn.Module):
+    def __init__(self, input_dim, reduction_ratio=16):
+        """
+        初始化SENet融合模块
+
+        Args:
+        - input_dim: 输入特征的维度（即160）
+        - reduction_ratio: 对特征进行压缩时的缩放因子，通常在16到64之间
+        """
+        super(SENetFusion, self).__init__()
+
+        # Squeeze：全局平均池化
+        self.pool = nn.AdaptiveAvgPool1d(1)
+
+        # Excitation：全连接网络，用于计算每个位置的注意力权重
+        self.fc1 = nn.Linear(input_dim, input_dim // reduction_ratio)  # 压缩维度
+        self.fc2 = nn.Linear(input_dim // reduction_ratio, input_dim)  # 恢复维度
+        self.sigmoid = nn.Sigmoid()  # 注意力权重的归一化
+
+    def forward(self, x1, x2):
+        """
+        执行前向传播，基于SENet机制融合x1和x2
+
+        Args:
+        - x1: 第一个输入张量，形状为 (B, 10, 160)
+        - x2: 第二个输入张量，形状为 (B, 10, 160)
+
+        Returns:
+        - output: 融合后的输出，形状为 (B, 10, 160)
+        """
+        # Squeeze操作：对x1和x2在序列维度上进行全局平均池化
+        x1_squeezed = self.pool(x1.permute(0, 2, 1)).squeeze(-1)  # 形状为 (B, 160)
+        x2_squeezed = self.pool(x2.permute(0, 2, 1)).squeeze(-1)  # 形状为 (B, 160)
+
+        # Excitation操作：对全局平均池化后的结果进行全连接层处理，生成注意力权重
+        attention_x1 = self.fc2(F.relu(self.fc1(x1_squeezed)))  # (B, 160)
+        attention_x2 = self.fc2(F.relu(self.fc1(x2_squeezed)))  # (B, 160)
+
+        # 使用Sigmoid归一化为0-1之间的权重
+        attention_x1 = self.sigmoid(attention_x1).unsqueeze(1)  # (B, 1, 160)
+        attention_x2 = self.sigmoid(attention_x2).unsqueeze(1)  # (B, 1, 160)
+
+        # 将注意力权重应用到x1和x2
+        x1_weighted = x1 * attention_x1  # (B, 10, 160)
+        x2_weighted = x2 * attention_x2  # (B, 10, 160)
+
+        # 将加权后的x1和x2融合
+        output = x1_weighted + x2_weighted  # (B, 10, 160)
+
+        return output
+
+
+class WeightedSumFusion(nn.Module):
+    def __init__(self, input_dim):
+        super(WeightedSumFusion, self).__init__()
+        # 权重系数，可以学习
+        self.weight1 = nn.Parameter(torch.ones(1))
+        self.weight2 = nn.Parameter(torch.ones(1))
+
+    def forward(self, x1, x2):
+        # 对两个张量进行加权
+        return self.weight1 * x1 + self.weight2 * x2
+
+
+class ConcatenateFusion(nn.Module):
+    def __init__(self, input_dim, output_dim):
+        super(ConcatenateFusion, self).__init__()
+        # 通过线性层将拼接后的维度缩减到output_dim
+        self.linear = nn.Linear(input_dim * 2, output_dim)
+
+    def forward(self, x1, x2):
+        # 拼接两个张量
+        fused = torch.cat((x1, x2), dim=-1)  # 形状为 (B, 10, 320)
+        output = self.linear(fused)  # 通过线性层降维
+        return output

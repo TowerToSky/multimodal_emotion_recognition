@@ -165,13 +165,13 @@ class Embrace(nn.Module):
                 nn.Linear(input_size, self.embed_dim * self.seq_len),
             )
 
-        # 添加相对位置编码
-        self.relative_position = nn.ParameterList(
-            [
-                nn.Parameter(torch.zeros(1, self.seq_len, self.embed_dim))
-                for _ in range(len(self.input_size_list))
-            ]
-        )
+        # # 添加相对位置编码
+        # self.relative_position = nn.ParameterList(
+        #     [
+        #         nn.Parameter(torch.zeros(1, self.seq_len, self.embed_dim))
+        #         for _ in range(len(self.input_size_list))
+        #     ]
+        # )
 
     def forward(self, input_list):
         assert len(input_list) == len(
@@ -186,7 +186,7 @@ class Embrace(nn.Module):
             x = x.view(x.size(0), seq_len, -1)
 
             # 添加相对位置编码
-            x = x + self.relative_position[i]
+            # x = x + self.relative_position[i]
 
             # if i == 0 and len(self.input_size_list) > 1:
             #     seq_len = seq_len // (len(self.input_size_list) - 1)

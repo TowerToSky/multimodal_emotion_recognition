@@ -28,10 +28,10 @@ do
         do
             for modality in "${modalities[@]}"
             do
-                for seq_len in 1 #10 6 8 12 16
+                for seq_len in 10 #10 6 8 12 16
                 do
                     echo "Dataset: $dataset, Num Classes: $cls_num, Dependent: $dependent, Label Type: $label_type, Modality: $modality, Seq Len: $seq_len"
-                    /home/yihaoyuan/miniconda3/envs/torch/bin/python $DIR/../ctfn_main.py \
+                    /home/yihaoyuan/miniconda3/envs/torch/bin/python $DIR/../ctfn_main_new.py \
                     --data $dataset \
                     --num_classes $cls_num \
                     --label_type $label_type \

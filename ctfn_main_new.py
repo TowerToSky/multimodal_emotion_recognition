@@ -46,7 +46,7 @@ from data.Dataset import FeatureDataset
 from data.MissTaskData import MissTaskDataset
 
 # from train.Trainer import Trainer
-from train.Trainer_CTFN import Trainer
+from train.Trainer_CTFN_new import Trainer
 from tools.logger import TensorBoardLogger
 from common.utils import (
     load_config,
@@ -61,7 +61,7 @@ def parse_args(args=None):
     parser.add_argument(
         "--config",
         type=str,
-        default=f"{Path.cwd()}/config/config.yaml",
+        default=f"{Path.cwd()}/config/config_new.yaml",
         help="Path to the config file.",
     )
     parser.add_argument(
@@ -152,7 +152,7 @@ def modify_dmodel(config, d_model):
 
 def modify_config(config, args):
     """根据命令行参数修改配置"""
-    config["model"] = config["model"][args.model]
+    # config["model"] = config["model"][args.model]
     config["data"] = config["data"][args.data]
     if args.data != "Ruiwen":
         config["data"]["label_type"] = args.label_type
@@ -162,9 +162,11 @@ def modify_config(config, args):
     config["num_classes"] = (
         args.num_classes if args.num_classes is not None else config["num_classes"]
     )
-    config["model"]["classifier"]["num_classes"] = config["num_classes"]
+    config["model"]["MFAFESM"]["classifier"]["nb_classes"] = config["num_classes"]
     config["training"]["num_classes"] = config["num_classes"]
-    config["model"]["feature_extract"]["input_dim"] = config["data"]["input_dim"]
+    config["model"]["MFAFESM"]["feature_extract"]["input_dim"] = config["data"][
+        "input_dim"
+    ]
 
     using_modality = None
     if args.using_modality is not None:
@@ -182,22 +184,25 @@ def modify_config(config, args):
     # 根据模态修改输入维度
     input_size = config["data"]["input_size"]
     config["training"]["missing_task"]["input_size"] = input_size
-    config["training"]["missing_task"]["input_size"][0] = config["data"]["input_dim"]
-    new_input_size = []
-    if using_modality is not None:
-        for modality in using_modality:
-            if modality == "eeg":
-                new_input_size.append(input_size[0])
-            elif modality == "eye":
-                new_input_size.append(input_size[1])
-            elif modality == "au" or modality == "pps":
-                new_input_size.append(input_size[2])
-        config["training"]["using_modalities"] = using_modality
+    config["model"]["MFAFESM"]["feature_align"]["input_size"] = input_size
+    # config["training"]["missing_task"]["input_size"][0] = config["data"]["input_dim"]
+    # new_input_size = []
+    # if using_modality is not None:
+    #     for modality in using_modality:
+    #         if modality == "eeg":
+    #             new_input_size.append(input_size[0])
+    #         elif modality == "eye":
+    #             new_input_size.append(input_size[1])
+    #         elif modality == "au" or modality == "pps":
+    #             new_input_size.append(input_size[2])
+    #     config["training"]["using_modalities"] = using_modality
 
-        config["data"]["input_size"] = new_input_size.copy()
-        config["model"]["feature_align"]["input_size"] = new_input_size.copy()
-        config["model"]["doubleTrans"]["input_size"] = new_input_size.copy()
-        config["model"]["feature_align"]["missing_input_size"] = new_input_size.copy()
+    #     config["data"]["input_size"] = new_input_size.copy()
+    #     config["model"]["MFAFESM"]["feature_align"][
+    #         "input_size"
+    #     ] = new_input_size.copy()
+    # config["model"]["doubleTrans"]["input_size"] = new_input_size.copy()
+    # config["model"]["feature_align"]["missing_input_size"] = new_input_size.copy()
 
     print(config["data"]["input_size"])
     print(config["data"]["modalities"])
@@ -205,6 +210,13 @@ def modify_config(config, args):
 
     if args.d_model is not None:
         modify_dmodel(config, args.d_model)
+
+    d_model = config["model"]["MFAFESM"]["fusion"]["d_model"]
+    swell = 3
+    config["model"]["MFAFESM"]["fusion"]["d_model"] = d_model * int(swell * 2)
+    config["model"]["MFAFESM"]["attention_encoder"]["d_model"] = d_model * int(
+        swell * 2
+    )
 
     # 根据命令行参数修改配置
     # 消融seq_len参数设置
@@ -232,8 +244,8 @@ def modify_config(config, args):
 
     # 修改checkpoint dir
     if args.checkpoint is not None:
-        config["training"]["missing_task"]["checkpoint_dir"] = (
-            config["training"]["missing_task"]["checkpoint_dir"]
+        config["model"]["MFAFESM"]["checkpoint_dir"] = (
+            config["model"]["MFAFESM"]["checkpoint_dir"]
             + "/"
             + dependent
             + "/"
@@ -298,74 +310,38 @@ def load_data(config, test_person=-1):
     return train_loader, test_loader
 
 
-def initialize_model(config, device):
+def initialize_mfafesm(config, device):
     """初始化模型"""
-    model = MFAFESM(config["model"])
+    model = MFAFESM(config["model"]["MFAFESM"])
     model = model.to(device)
 
     return model
 
 
-def initialize_model_opt(config, device):
+def initialize_ctfn(config, device):
     """初始化模型"""
-    model_config = config["model"]
+    model_config = config["model"]["CTFN"]
     doubleTrans_config = model_config["doubleTrans"]
     doubleTrans_config["lr"] = config["training"]["learning_rate"]
 
     model_list = []
-    # fe_model = FeatureExtract(model_config["feature_extract"])
-    # model_list.append(fe_model)
-    align_model = ModalityAlign(model_config)
-    model_list.append(align_model)
 
-    input_size = doubleTrans_config["input_size"]
-    e2b_model = DoubleTrans(
-        doubleTrans_config, input_dim=[input_size[1], input_size[0]], device=device
-    )
-    model_list.append(e2b_model)
+    b2e_model = DoubleTrans(doubleTrans_config, device=device)
+    model_list.append(b2e_model)
 
-    f2b_model = DoubleTrans(
-        doubleTrans_config, input_dim=[input_size[2], input_size[0]], device=device
-    )
-    model_list.append(f2b_model)
+    b2f_model = DoubleTrans(doubleTrans_config, device=device)
+    model_list.append(b2f_model)
 
-    e2f_model = DoubleTrans(
-        doubleTrans_config, input_dim=[input_size[1], input_size[2]], device=device
-    )
+    e2f_model = DoubleTrans(doubleTrans_config, device=device)
     model_list.append(e2f_model)
 
     doubleTrans_param = (
-        list(e2b_model.get_params())
-        + list(f2b_model.get_params())
+        list(b2e_model.get_params())
+        + list(b2f_model.get_params())
         + list(e2f_model.get_params())
     )
 
-    emotion_model = EmotionClassificationModel(model_config["classifier"])
-    model_list.append(emotion_model)
-
-    for model in model_list:
-        if isinstance(model, torch.nn.Module):
-            model = model.to(device)
-
-    optimizer = Adam(
-        [
-            {"params": align_model.parameters()},
-            {"params": doubleTrans_param},
-            {"params": emotion_model.parameters()},
-        ],
-        lr=config["training"]["learning_rate"],
-    )
-    return model_list, optimizer
-
-
-def apply_pretrain_weights(model, checkpoint_dir, test_person):
-    """加载预训练模型权重"""
-    checkpoint_path = os.path.join(
-        checkpoint_dir,
-        f"best_checkpoint_{test_person}.pth",
-    )
-    applyWeights = ApplyPretrainWeights(model, checkpoint_path)
-    applyWeights()
+    return model_list, doubleTrans_param
 
 
 def run(config, logger, device, test_person, history, mode="train"):
@@ -374,7 +350,16 @@ def run(config, logger, device, test_person, history, mode="train"):
 
     # 初始化模型
     if mode == "train":
-        model, optimizer = initialize_model_opt(config, device)
+        msafesm_model = initialize_mfafesm(config, device)
+        ctfn, doubleTrans_param = initialize_ctfn(config, device)
+        optimizer = Adam(
+            [
+                {"params": msafesm_model.parameters()},
+                {"params": doubleTrans_param},
+            ],
+            lr=config["training"]["learning_rate"],
+        )
+        model = [msafesm_model, ctfn]
     else:
         model, optimizer = [], None
     # model, optimizer = initialize_model_opt(config, device)
@@ -391,11 +376,10 @@ def run(config, logger, device, test_person, history, mode="train"):
         test_loader=test_loader,
         optimizer=optimizer,
         loss_fn=loss_fn,
-        num_classes=config["num_classes"],
         logger=logger,
         scheduler=None,
+        config=config,
         device=device,
-        modalities=config["data"]["modalities"],
     )
 
     # 打印初始状态
@@ -409,7 +393,6 @@ def run(config, logger, device, test_person, history, mode="train"):
 
         trainer.train(
             num_epochs=config["training"]["epochs"],
-            data_config=config["data"],
             test_person=test_person,
         )
 
@@ -420,13 +403,13 @@ def run(config, logger, device, test_person, history, mode="train"):
                 / f"checkpoint_{logger.timestamp}"
                 / f"checkpoint_{test_person}_{config['training']['epochs']}.pth"
             )
-    elif mode == "infer":
-        # trainer.infer(config["data"], test_person)
-        trainer.infer_single_modality(
-            data_config=config["data"],
-            train_config=config["training"],
-            test_person=test_person,
-        )
+    # elif mode == "infer":
+    #     # trainer.infer(config["data"], test_person)
+    #     trainer.infer_single_modality(
+    #         data_config=config["data"],
+    #         train_config=config["training"],
+    #         test_person=test_person,
+    #     )
 
     # 训练结果输出到文件中
     history.update(trainer.history)

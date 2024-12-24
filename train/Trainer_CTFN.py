@@ -13,6 +13,7 @@ from pathlib import Path
 import copy
 import torch
 import torch.nn as nn
+import os
 
 
 def add_project_root_to_sys_path():
@@ -442,37 +443,16 @@ class Trainer:
         # Optionally load other information like epoch and history
         return checkpoint.get("epoch", 0)
 
-    def infer(self, data_config, test_person=0):
-        """推理模式"""
-        # self.model.test()
-        self.metrics.reset()
-        with torch.no_grad():
-            for inputs, targets in tqdm(self.test_loader, desc=f"Validation"):
-                adj, graph_indicator = initialize_graph(
-                    data_config, len(targets), self.device
-                )
-                self.test_step(inputs, targets, adj, graph_indicator)
-        loss, acc, f1 = self.metrics.average_metrics(len(self.test_loader))
-        cm = self.metrics.get_confusion_matrix()
-
-        reslut = {
-            "acc": acc,
-            "loss": loss,
-            "f1-socre": f1,
-            "cm": cm,
-            "epoch": 0,
-        }
-        self.history[test_person] = copy.deepcopy(reslut)
-
-        self.logger.info(
-            f"Final test acc: {acc:.4f}, test loss: {loss:.4f}, f1 score: {f1:.4f}"
-        )
-        self.logger.info(f"Final test confusion matrix: \n{cm}")
-
-    def infer_single_modality(self, data_config, test_person=0):
+    def infer_single_modality(self, data_config, train_config, test_person=0):
         """
         ，面向CTFN的单模态推理模式实现逻辑，即加载预训练模型，从单一模态生成其他模态，融合分类，全程无梯度更新，无训练
         """
+        checkpoint_path = os.path.join(
+            train_config["missing_task"]["checkpoint_dir"],
+            f"best_checkpoint_{test_person}.pth",
+        )
+        using_modality = train_config["using_modalities"][0]
+
         # self.model.test()
         self.metrics.reset()
         with torch.no_grad():
@@ -480,20 +460,269 @@ class Trainer:
                 adj, graph_indicator = initialize_graph(
                     data_config, len(targets), self.device
                 )
-                self.test_step(inputs, targets, adj, graph_indicator)
+                loss, acc = self.infer_two_modalities(
+                    train_config, inputs, targets, checkpoint_path, adj, graph_indicator
+                )
+                # if using_modality == "eye":
+                #     loss, acc = self.infer(
+                #         train_config,
+                #         inputs,
+                #         targets,
+                #         checkpoint_path,
+                #         adj,
+                #         graph_indicator,
+                #         is_eye_input=True,
+                #     )
+                # else:
+                #     loss, acc = self.infer(
+                #         train_config,
+                #         inputs,
+                #         targets,
+                #         checkpoint_path,
+                #         adj,
+                #         graph_indicator,
+                #         is_eye_input=False,
+                #     )
+
         loss, acc, f1 = self.metrics.average_metrics(len(self.test_loader))
         cm = self.metrics.get_confusion_matrix()
 
-        reslut = {
+        self._log_metrics(
+            0,
+            0,
+            0,
+            0,
+            loss,
+            acc,
+            f1,
+            test_person,
+        )
+        results = {
             "acc": acc,
             "loss": loss,
-            "f1-socre": f1,
+            "f1-score": f1,
             "cm": cm,
             "epoch": 0,
         }
-        self.history[test_person] = copy.deepcopy(reslut)
+        self.history[test_person] = copy.deepcopy(results)
 
         self.logger.info(
             f"Final test acc: {acc:.4f}, test loss: {loss:.4f}, f1 score: {f1:.4f}"
         )
         self.logger.info(f"Final test confusion matrix: \n{cm}")
+
+    def set_eval(self, ctfn_model):
+        """
+        设置模型为评估模式。
+        """
+        ctfn_model.g12.eval()
+        ctfn_model.g21.eval()
+
+    def load_models(self, checkpoint_path):
+        """
+        从检查点加载模型并设置为评估模式。
+        """
+        checkpoint = torch.load(checkpoint_path)
+        align_model, e2b_model, f2b_model, e2f_model, cls_model = checkpoint
+
+        align_model.eval()
+        self.set_eval(e2b_model)
+        self.set_eval(f2b_model)
+        self.set_eval(e2f_model)
+        cls_model.eval()
+
+        return align_model, e2b_model, f2b_model, e2f_model, cls_model
+
+    def process_input_data(self, inputs, batch_size, input_size):
+        """
+        处理输入数据，将缺失的模态填充为零张量。
+        """
+        eeg, eye, au = self._process_input(inputs)
+        if eeg is None:
+            eeg = torch.zeros(batch_size, 32, input_size[0]).to(self.device)
+        if eye is None:
+            eye = torch.zeros(batch_size, input_size[1]).to(self.device)
+        if au is None:
+            au = torch.zeros(batch_size, input_size[-1]).to(self.device)
+
+        return eeg, eye, au
+
+    def process_generate_modality(
+        self,
+        align_model,
+        e2b_model,
+        f2b_model,
+        e2f_model,
+        adj,
+        graph_indicator,
+        eeg,
+        eye,
+        au,
+    ):
+        # 生成对齐特征
+        align_featues = align_model(adj, graph_indicator, eeg, eye, au, pps=None)
+        _, eye_track, face = align_featues
+
+        # 生成其他模态
+        if torch.sum(au) == 0:
+            brain, bimodal_eb = e2b_model.g12(eye_track)
+            face, bimodal_ef = e2f_model.g12(eye_track)
+
+            _, bimodal_fe = e2f_model.g21(face)
+            _, bimodal_fb = f2b_model.g12(face)
+        elif torch.sum(eye) == 0:
+            brain, bimodal_fb = f2b_model.g12(face)
+            eye_track, bimodal_fe = e2f_model.g21(face)
+
+            _, bimodal_eb = e2b_model.g12(eye_track)
+            _, bimodal_ef = e2f_model.g12(eye_track)
+
+        # 模态间相互生成
+        eye_track_2, bimodal_be = e2b_model.g21(brain)
+        face_, bimodal_bf = f2b_model.g21(brain)
+
+        return bimodal_eb, bimodal_ef, bimodal_fe, bimodal_fb, bimodal_be, bimodal_bf
+
+    def perform_inference(
+        self,
+        align_model,
+        e2b_model,
+        f2b_model,
+        e2f_model,
+        cls_model,
+        adj,
+        graph_indicator,
+        eeg,
+        eye,
+        au,
+        targets,
+    ):
+        """
+        执行推理并返回损失和准确度。
+        """
+        # 生成对齐特征
+        generate_modality = self.process_generate_modality(
+            align_model,
+            e2b_model,
+            f2b_model,
+            e2f_model,
+            adj,
+            graph_indicator,
+            eeg,
+            eye,
+            au,
+        )
+
+        # 融合分类
+        select_layer = -1
+        generate_modality = [item[select_layer] for item in generate_modality]
+        output = cls_model(generate_modality)
+
+        # 计算准确率和损失
+        acc = torch.eq(output.argmax(dim=1), targets).sum().item() / len(targets)
+        loss = self.loss_fn(output, targets)
+        self.metrics.update(loss, output, targets)
+
+        return loss.item(), acc
+
+    def infer(
+        self,
+        train_config,
+        inputs,
+        targets,
+        checkpoint_path,
+        adj,
+        graph_indicator,
+        is_eye_input=True,
+    ):
+        """
+        进行推理，支持眼动数据或面部数据的推理。
+        """
+        batch_size = len(targets)
+        input_size = train_config["missing_task"]["input_size"]
+
+        # 加载模型
+        align_model, e2b_model, f2b_model, e2f_model, cls_model = self.load_models(
+            checkpoint_path
+        )
+
+        # 处理输入数据
+        eeg, eye, au = self.process_input_data(inputs, batch_size, input_size)
+        targets = targets.to(self.device)
+        # 根据输入类型选择特征（眼动或面部）
+        if not is_eye_input:
+            # 对于面部输入，忽略眼动数据
+            eye = torch.zeros(batch_size, input_size[1]).to(self.device)
+
+        # 执行推理
+        loss, acc = self.perform_inference(
+            align_model,
+            e2b_model,
+            f2b_model,
+            e2f_model,
+            cls_model,
+            adj,
+            graph_indicator,
+            eeg,
+            eye,
+            au,
+            targets,
+        )
+
+        return loss, acc
+
+    def infer_two_modalities(
+        self, train_config, inputs, targets, checkpoint_path, adj, graph_indicator
+    ):
+        batch_size = len(targets)
+        input_size = train_config["missing_task"]["input_size"]
+
+        # 加载模型
+        align_model, e2b_model, f2b_model, e2f_model, cls_model = self.load_models(
+            checkpoint_path
+        )
+
+        # 处理输入数据
+        eeg, eye, au = self.process_input_data(inputs, batch_size, input_size)
+        targets = targets.to(self.device)
+
+        _, eye, au = align_model(adj, graph_indicator, eeg, eye, au, pps=None)
+
+        brain_1, bimodal_eb = e2b_model.g12(eye)
+        brain_2, bimoal_fb = f2b_model.g12(au)
+
+        e2b_fake_e, e2b_fake_b, bimodal_eb, bimodal_be = e2b_model.double_fusion(
+            eye, brain_1, need_grad=False
+        )
+        eye_fusion_eb = specific_modal_fusion(eye, e2b_fake_e, bimodal_be)
+        brain_fusion_be = bimodal_eb[-1]
+
+        f2b_fake_f, f2b_fake_b, bimodal_fb, bimodal_bf = f2b_model.double_fusion(
+            au, brain_2, need_grad=False
+        )
+        face_fusion_fb = specific_modal_fusion(au, f2b_fake_f, bimodal_fb)
+        brain_fusion_bf = bimodal_bf[-1]
+
+        e2f_fake_e, e2f_fake_f, bimodal_ef, bimodal_fe = e2f_model.double_fusion(
+            eye, au, need_grad=False
+        )
+        eye_fusion_ef = specific_modal_fusion(eye, e2f_fake_e, bimodal_fe)
+        face_fusion_fe = specific_modal_fusion(au, e2f_fake_f, bimodal_ef)
+
+        outputs = cls_model(
+            (
+                eye_fusion_eb,
+                brain_fusion_be,
+                face_fusion_fb,
+                brain_fusion_bf,
+                eye_fusion_ef,
+                face_fusion_fe,
+            )
+        )
+
+        loss = self.loss_fn(outputs, targets)
+        acc = torch.eq(outputs.argmax(dim=1), targets).sum().item() / len(targets)
+
+        self.metrics.update(loss, outputs, targets)
+
+        return loss.item(), acc
