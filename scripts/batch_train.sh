@@ -2,16 +2,17 @@
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 echo $DIR
 
-# dataset="HCI"
-dataset="Ruiwen"
-modalities="eeg, eye, au"
+dataset="HCI"
+# dataset="Ruiwen"
+# modalities="eeg, eye, au"
 # modalities=("eeg, eye, pps")
+modalities=("eye, pps")
 # modalities=("eeg" "eye" "pps")
-for label_type in "ruiwen"  #"valence" # "arousal"
+for label_type in  "arousal" "valence"  # "ruiwen"
 do
-    for cls_num in 2 4 #3
+    for cls_num in 3 #2 4 
     do
-        for dependent in 0 1
+        for dependent in 0 #1
         do
             for modality in "${modalities[@]}"
             do

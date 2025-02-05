@@ -189,16 +189,19 @@ def modify_config(config, args):
 
     d_model = config["model"]["fusion"]["d_model"]
     # 根据模态修改模型维度（zhe'k
-    swell = 1
+    swell = 2
     if config["model"]["type"] == "major_modality_fusion":
-        if len(using_modality) > 1:
-            swell = 2
+        swell = 2
     elif config["model"]["type"] == "iterative_fusion":
         swell = 3
     elif config["model"]["type"] == "full_compose_fusion":
         swell = 6
     elif config["model"]["type"] == "add_fusion":
         swell = 1.5
+    if len(using_modality) == 1:
+        swell = 1
+    elif len(using_modality) == 2:
+        swell = 2
     config["model"]["fusion"]["d_model"] = d_model * int(swell * 2)
     config["model"]["attention_encoder"]["d_model"] = d_model * int(swell * 2)
 
@@ -293,7 +296,6 @@ def initialize_model(config, device):
     model = MFAFESM(config["model"])
     model = model.to(device)
     return model
-
 
 
 def run(config, logger, device, test_person, history, mode="train"):

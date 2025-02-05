@@ -28,7 +28,7 @@ def plot_raven_acc(
         num_persons = 10
         figsize = (int(num_persons / 2 * 1.5), 5)
     else:
-        num_persons = 30
+        num_persons = 31
         figsize = (15, 5)
 
     df = df[df["timestamp"] == date].iloc[:, -(num_persons + 3) :]
@@ -57,6 +57,9 @@ def plot_raven_acc(
         plt.text(i, a, "%.2f" % a, ha="center", va="bottom", fontsize=10)
     file_name = f"Ruiwen {'Dependent' if dependent else 'Independent'} {num_classes}-classification Acc"
     plt.title(file_name)
+    save_path = (
+        save_path + "/Ruiwen/" + str("dependent" if dependent else "independent") + "/"
+    )
     if save_path:
         os.makedirs(save_path, exist_ok=True)
         plt.savefig(
@@ -211,14 +214,17 @@ def plot_exp_cm(
     df = pd.read_csv(path)
     cm = df[df["timestamp"] == date].iloc[:, -1].values[0]
     title = f"{begin_title} Confusion Matrix {num_classes}-classification"
-    if num_classes == 3:
-        classes = ["Confused", "Non-Confused"]
+    dataset = "Ruiwen"
     if num_classes == 2:
         classes = ["Confused", "Non-Confused"]
-
     elif num_classes == 4:
         classes = ["Confused", "Guess", "Non-Confused", "Think-right"]
     else:
         classes = ["Calm", "Medium", "Excited"]
+        dataset = "HCI"
+
+    save_path = save_path + f"/{dataset}/"
+    dependent = "dependent" in path
+    save_path = save_path + f"{str('dependent' if dependent else 'independent')}/"
 
     plot_cm(cm, classes, title, save_path, save_type, show)

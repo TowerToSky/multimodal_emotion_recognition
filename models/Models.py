@@ -115,7 +115,7 @@ class MFAFESM(nn.Module):
         result = self.classifier(encoded_features)
 
         result = F.log_softmax(result, dim=1)
-        return result, fused_features, encoded_features
+        return result
 
 
 class FeatureExtract(nn.Module):

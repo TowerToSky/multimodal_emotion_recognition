@@ -29,7 +29,7 @@ model:
       embed_dim: 1600  # 直接写计算结果（160 * 10）
 
 training:
-  ex_name: "Run the Raven experiment again." 
+  ex_name: "HCI two modality fusion" 
   batch_size: 64
   epochs: 500
   learning_rate: 0.0001
