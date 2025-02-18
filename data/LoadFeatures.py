@@ -76,9 +76,20 @@ class DataFeatures(object):
                     rawData.data[modality]
                 )
             else:
-                assert modality in rawData.data["features"].keys(), f"数据中不包含{modality}数据"
-                self.features[modality] = copy.deepcopy(rawData.data["features"][modality])
-            
+                assert (
+                    modality in rawData.data["features"].keys()
+                ), f"数据中不包含{modality}数据"
+                feature = copy.deepcopy(
+                    rawData.data["features"][modality]
+                )
+                feature = np.nan_to_num(feature)
+
+                if "au" in modality:
+                    feature = AuFeatures._normalize(feature)
+                elif "eeg" not in modality:
+                    feature = self._normalize(feature)
+                self.features[modality] = copy.deepcopy(feature)
+
             if self.ex_nums is None:
                 self.ex_nums = int(
                     self.features[modality].shape[0] // len(self.subject_lists)
@@ -103,6 +114,20 @@ class DataFeatures(object):
             self.label = rawData.data[label_key]
         else:
             self.label = np.concatenate(rawData.data[label_key])
+    
+    def _normalize(self, features):
+        """
+        归一化特征
+
+        Args:
+            features (np.ndarray): 特征数组
+        Returns:
+            np.ndarray: 归一化后的特征
+        """
+        # 归一化
+        features = (features - np.mean(features)) / np.std(features)
+        features = (features - features.min()) / (features.max() - features.min())
+        return features
 
     def load_eeg_features(self, eeg_data):
         eegFeatures = EEGFeatures(eeg_data, self.subject_lists, self.data_path)
@@ -267,7 +292,8 @@ class EyeFeatures:
         self.data_path = data_path
         self.eye_features = None  # 初始化特征缓存
 
-    def _normalize(self, features):
+    @staticmethod
+    def _normalize(features):
         """
         归一化特征
 
@@ -311,7 +337,7 @@ class EyeFeatures:
             # 加载特征文件
             subject_eye_features = np.load(eye_feature_path)
             subject_eye_features = np.nan_to_num(subject_eye_features)  # 替换NaN值
-            subject_eye_features = self._normalize(subject_eye_features)
+            subject_eye_features = EyeFeatures._normalize(subject_eye_features)
             eye_track_features.append(subject_eye_features)
 
         # 合并所有受试者的特征
@@ -348,23 +374,8 @@ class AuFeatures:
         self.data_path = data_path
         self.au_features = None  # 初始化特征缓存
 
-    def _normalize_au(self, au_features):
-        """
-        归一化AU特征
-
-        Args:
-            au_features (np.ndarray): AU特征数组
-        Returns:
-            np.ndarray: 归一化后的AU特征
-        """
-        # 归一化
-        au_features = (au_features - np.mean(au_features)) / np.std(au_features)
-        au_features = (au_features - au_features.min()) / (
-            au_features.max() - au_features.min()
-        )
-        return au_features
-
-    def _normalize(self, features):
+    @staticmethod
+    def _normalize(features):
         """
         归一化特征
 
@@ -383,7 +394,11 @@ class AuFeatures:
             end_idx = (au_index + 1) * features_per_au
             au_features = features[:, start_idx:end_idx]
             # 归一化
-            features[:, start_idx:end_idx] = self._normalize_au(au_features)
+            au_features = (au_features - np.mean(au_features)) / np.std(au_features)
+            au_features = (au_features - au_features.min()) / (
+                au_features.max() - au_features.min()
+            )
+            features[:, start_idx:end_idx] = au_features
         return features
 
     def compute_au_features(self, feature_dir_name="au_feature"):
@@ -452,7 +467,8 @@ class PPSFeatures:
         self.data_path = data_path
         self.pps_features = None  # 初始化特征缓存
 
-    def _normalize(self, features):
+    @staticmethod
+    def _normalize(features):
         """
         归一化特征
 
@@ -498,7 +514,7 @@ class PPSFeatures:
                 np.float32
             )
             subject_pps_features = np.nan_to_num(subject_pps_features)  # 替换NaN值
-            subject_pps_features = self._normalize(subject_pps_features)
+            subject_pps_features = PPSFeatures._normalize(subject_pps_features)
             pps_features.append(subject_pps_features)
 
         # 合并所有受试者的特征
@@ -533,7 +549,32 @@ if __name__ == "__main__":
     #     print(modality, ruiwenData.features[modality].shape)
 
     data_path = "/data/MAHNOB/hci_data.pkl"
-    subject_list = [1,2,4,5,6,7,8,10,11,13,14,17,18,19,20,21,22,23,24,26,27,28,29,30]
+    subject_list = [
+        1,
+        2,
+        4,
+        5,
+        6,
+        7,
+        8,
+        10,
+        11,
+        13,
+        14,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        26,
+        27,
+        28,
+        29,
+        30,
+    ]
     print(subject_list)
     modalities = ["eeg", "eye", "pps"]
     mahnobData = DataFeatures(
