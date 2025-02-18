@@ -11,6 +11,7 @@ import os
 import sys
 from tqdm import tqdm
 from pathlib import Path
+import copy
 
 
 def add_project_root_to_sys_path():
@@ -63,10 +64,21 @@ class DataFeatures(object):
 
         self.features = {}
         for modality in modalities:
-            assert modality in rawData.data.keys(), f"数据中不包含{modality}数据"
-            self.features[modality] = getattr(self, f"load_{modality}_features")(
-                rawData.data[modality]
-            )
+            # assert modality in rawData.data.keys(), f"数据中不包含{modality}数据"
+            # self.features[modality] = getattr(self, f"load_{modality}_features")(
+            #     rawData.data[modality]
+            # )
+            # 2025-02-18修改：数据组织形式变化，raw_data存于raw_data字段下，已经手动提取好的特征存于features字段下
+            # 注意：Raven数据没有修改数据组织形式，需要用上方注释代码，TODO:后续统一数据组织形式
+            if "features" not in rawData.data.keys():
+                assert modality in rawData.data.keys(), f"数据中不包含{modality}数据"
+                self.features[modality] = getattr(self, f"load_{modality}_features")(
+                    rawData.data[modality]
+                )
+            else:
+                assert modality in rawData.data["features"].keys(), f"数据中不包含{modality}数据"
+                self.features[modality] = copy.deepcopy(rawData.data["features"][modality])
+            
             if self.ex_nums is None:
                 self.ex_nums = int(
                     self.features[modality].shape[0] // len(self.subject_lists)
@@ -521,32 +533,7 @@ if __name__ == "__main__":
     #     print(modality, ruiwenData.features[modality].shape)
 
     data_path = "/data/MAHNOB/hci_data.pkl"
-    subject_list = [
-        1,
-        2,
-        4,
-        5,
-        6,
-        7,
-        8,
-        10,
-        11,
-        13,
-        14,
-        17,
-        18,
-        19,
-        20,
-        21,
-        22,
-        23,
-        24,
-        26,
-        27,
-        28,
-        29,
-        30,
-    ]
+    subject_list = [1,2,4,5,6,7,8,10,11,13,14,17,18,19,20,21,22,23,24,26,27,28,29,30]
     print(subject_list)
     modalities = ["eeg", "eye", "pps"]
     mahnobData = DataFeatures(
