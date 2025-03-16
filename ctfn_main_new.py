@@ -57,7 +57,7 @@ from common.utils import (
 
 def parse_args(args=None):
     """解析命令行参数"""
-    parser = argparse.ArgumentParser(description="Train and etestuate a model.")
+    parser = argparse.ArgumentParser(description="Train and eventuate a model.")
     parser.add_argument(
         "--config",
         type=str,
@@ -83,7 +83,7 @@ def parse_args(args=None):
         help="Resume training from the last checkpoint.",
     )
     parser.add_argument(
-        "--dependent", type=int, default=None, help="denpendent or indenpendent."
+        "--dependent", type=int, default=None, help="dependent or independent."
     )
     parser.add_argument(
         "--num_classes", type=int, default=None, help="Number of classes."
@@ -99,7 +99,7 @@ def parse_args(args=None):
         "--mode",
         type=str,
         choices=["train", "infer"],
-        default="train",
+        default=None,
         help="Mode: train or infer.",
     )
     parser.add_argument(
@@ -126,6 +126,9 @@ def parse_args(args=None):
         type=int,
         default=None,
         help="Sequence length for the model.",
+    )
+    parser.add_argument(
+        "--test", action="store_true", help="Wether use single test mode."
     )
     if args is not None:
         return parser.parse_args(args)
@@ -167,6 +170,9 @@ def modify_config(config, args):
     config["model"]["MFAFESM"]["feature_extract"]["input_dim"] = config["data"][
         "input_dim"
     ]
+
+    if args.mode is not None:
+        config["training"]["mode"] = args.mode
 
     using_modality = None
     if args.using_modality is not None:
@@ -229,7 +235,7 @@ def modify_config(config, args):
     if "attention_encoder" in config["model"].keys() and args.num_layers is not None:
         config["model"]["attention_encoder"]["num_layers"] = args.num_layers
 
-    # 根据denpendent参数修改输出路径配置
+    # 根据dependent参数修改输出路径配置
     if args.dependent is not None:
         config["training"]["dependent"] = True if args.dependent == 1 else False
 
@@ -244,9 +250,8 @@ def modify_config(config, args):
 
     # 修改checkpoint dir
     if args.checkpoint is not None:
-        config["model"]["MFAFESM"]["checkpoint_dir"] = (
-            config["model"]["MFAFESM"]["checkpoint_dir"]
-            + "/"
+        checkpoint_path = (
+            "/"
             + dependent
             + "/"
             + args.data
@@ -254,7 +259,14 @@ def modify_config(config, args):
             + str(args.checkpoint)
             + "/best_checkpoint"
         )
-
+        if config["training"]["stage"] == 1:
+            config["model"]["MFAFESM"]["checkpoint_dir"] = (
+                config["model"]["MFAFESM"]["checkpoint_dir"] + checkpoint_path
+            )
+        else:
+            config["model"]["CTFN"]["checkpoint_dir"] = (
+                config["model"]["CTFN"]["checkpoint_dir"] + checkpoint_path
+            )
     return config
 
 
@@ -349,7 +361,7 @@ def run(config, logger, device, test_person, history, mode="train"):
     train_loader, test_loader = load_data(config, test_person=test_person)
 
     # 初始化模型
-    if mode == "train":
+    if mode == "train" or mode == "infer":
         msafesm_model = initialize_mfafesm(config, device)
         ctfn, doubleTrans_param = initialize_ctfn(config, device)
         optimizer = Adam(
@@ -403,13 +415,15 @@ def run(config, logger, device, test_person, history, mode="train"):
                 / f"checkpoint_{logger.timestamp}"
                 / f"checkpoint_{test_person}_{config['training']['epochs']}.pth"
             )
-    # elif mode == "infer":
-    #     # trainer.infer(config["data"], test_person)
-    #     trainer.infer_single_modality(
-    #         data_config=config["data"],
-    #         train_config=config["training"],
-    #         test_person=test_person,
-    #     )
+    elif mode == "infer":
+        # trainer.infer(config["data"], test_person)
+        # trainer.infer_single_modality(
+        #     data_config=config["data"],
+        #     train_config=config["training"],
+        #     test_person=test_person,
+        # )
+
+        trainer.infer(test_person=test_person)
 
     # 训练结果输出到文件中
     history.update(trainer.history)
@@ -434,19 +448,25 @@ def main():
     history = dict()
 
     mode = config["training"]["mode"]
+    no_person_num = 0
+    # args.test = True
+    if args.test:
+        config["training"]["epochs"] = 5
+        no_person_num = 20 if args.data == "HCI" else 26
+
     # 运行主函数
     if config["training"]["dependent"]:
         for fold in range(config["training"]["n_folds"]):
             run(config, logger, device, fold, history, mode=mode)
     else:
-        for test_person in range(len(config["data"]["subject_lists"])):
+        for test_person in range(len(config["data"]["subject_lists"]) - no_person_num):
             run(config, logger, device, test_person, history, mode=mode)
 
     # 保存训练历史到文件
     save_path = save_history(config, args.data, logger.timestamp, history)
 
     logger.info(f"History saved to {save_path}.")
-
+    logger.info(f"Log file is {logger.log_path}")
     # 关闭日志器
     logger.close()
 

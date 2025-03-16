@@ -63,10 +63,49 @@ class DataFeatures(object):
 
         self.features = {}
         for modality in modalities:
-            assert modality in rawData.data.keys(), f"数据中不包含{modality}数据"
-            self.features[modality] = getattr(self, f"load_{modality}_features")(
-                rawData.data[modality]
-            )
+            # assert modality in rawData.data.keys(), f"数据中不包含{modality}数据"
+            # self.features[modality] = getattr(self, f"load_{modality}_features")(
+            #     rawData.data[modality]
+            # )
+            # 2025-02-18修改：数据组织形式变化，raw_data存于raw_data字段下，已经手动提取好的特征存于features字段下
+            # 注意：Raven数据没有修改数据组织形式，需要用上方注释代码，TODO:后续统一数据组织形式
+            if "features" not in rawData.data.keys():
+                if "raw_data" in rawData.data.keys():
+                    rawData.data.update(rawData.data["raw_data"])
+                    del rawData.data["raw_data"]
+                
+                assert modality in rawData.data.keys(), f"数据中不包含{modality}数据"
+                self.features[modality] = getattr(self, f"load_{modality}_features")(
+                    rawData.data[modality]
+                )
+            else:
+                assert (
+                    modality in rawData.data["features"].keys()
+                ), f"数据中不包含{modality}数据"
+                feature = copy.deepcopy(
+                    rawData.data["features"][modality]
+                )
+                feature = np.nan_to_num(feature)
+
+                if "au" in modality:
+                    feature = AuFeatures._normalize(feature)
+                elif "eeg" not in modality:
+                    feature = self._normalize(feature)
+                self.features[modality] = copy.deepcopy(feature)
+
+                if "eeg" not in modality:
+                    self.features[modality] = self.features[modality].reshape(
+                        -1, self.features[modality].shape[-1]
+                    )
+
+            # if "raw_data" in rawData.data.keys():
+            #     rawData.data.update(rawData.data["raw_data"])
+            #     del rawData.data["raw_data"]
+            
+            # assert modality in rawData.data.keys(), f"数据中不包含{modality}数据"
+            # self.features[modality] = getattr(self, f"load_{modality}_features")(
+            #     rawData.data[modality]
+            # )
             if self.ex_nums is None:
                 self.ex_nums = int(
                     self.features[modality].shape[0] // len(self.subject_lists)

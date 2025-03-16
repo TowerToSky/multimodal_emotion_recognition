@@ -13,7 +13,6 @@ from tqdm import tqdm
 from pathlib import Path
 import copy
 import yaml
-import torchsummary
 
 
 def add_project_root_to_sys_path():
@@ -67,84 +66,6 @@ import torch.nn.functional as F
 #         """
 #         super(CTFNPromptModels, self).__init__()
 
-
-class CTFN(nn.Module):
-    def __init__(self, config):
-        """
-        Introduction:
-            主模型，包含模态特征提取，模态对齐
-        Args:
-            config: 配置文件
-        """
-        super(CTFN, self).__init__()
-        self.model_align = ModalityAlign(config)
-        self.double_trans12 = DubleTrans(config)
-        self.double_trans13 = DubleTrans(config)
-        self.double_trans23 = DubleTrans(config)
-
-        # 初始化权重
-        # self.apply(init_weights)
-
-    def forward(
-        self,
-        adj,
-        graph_indicator,
-        eeg,
-        eye,
-        au: torch.Tensor,
-        pps: torch.Tensor = None,
-    ):
-        """
-        Introduction:
-            前向传播
-        Args:
-            adj: 邻接矩阵
-            graph_indicator: 图示性质
-            eeg: 脑电数据
-            eye: 眼动数据
-            au: 面部动作数据
-            pps: 身体姿势数据
-        Returns:
-            返回情绪分类结果
-        """
-        align = self.model_align(adj, graph_indicator, eeg, eye, au, pps)
-        eeg, eye, au = align
-
-        # # eeg -> eye
-        # fake_eye, reconst_eeg, bimodal_12, bimodal_21 = self.double_trans12(eeg, eye)
-
-        # # eeg -> au
-        # fake_au, reconst_eeg, bimodal_13, bimodal_31 = self.double_trans13(eeg, au)
-
-        # # eye -> au
-        # fake_au, reconst_eye, bimodal_23, bimodal_32 = self.double_trans23(eye, au)
-
-        # 适配于仅有eye和au的情况
-        # eye -> eeg
-        fake_eeg_by_eye, reconst_eye, bimodal_12_1, bimodal_21_1 = self.double_trans12(
-            eye, eeg
-        )
-        # eeg -> eye，循环一致性
-        fake_eye_by_eeg, reconst_eeg_by_eye, bimodal_21_2, bimodal_21_2 = (
-            self.double_trans12(eeg, eye)
-        )
-
-        # au -> eeg
-        fake_eeg_by_au, reconst_au, bimodal_13_1, bimodal_31_1 = self.double_trans13(
-            au, eeg
-        )
-        # eeg -> au，循环一致性
-        fake_au_by_eeg, reconst_eeg_by_au, bimodal_31_2, bimodal_13_2 = (
-            self.double_trans13(eeg, au)
-        )
-
-        # fusion，卷积融合，提取中间特征作为融合特征，拼劲后卷积融合到一起
-
-        return (
-            (fake_eeg_by_eye, fake_eeg_by_au),
-            (reconst_eye, reconst_au),
-            (bimodal_12, bimodal_13, bimodal_21, bimodal_31),
-        )
 
 
 class ModalityAlign(nn.Module):
@@ -200,7 +121,7 @@ class DoubleTrans(object):
         self.alpha = alpha
         seq_len = config["seq_len"]
         p = config["p"]
-
+        self.loss_history = []
         self.use_reconst_loss = True
         self.g12 = TransEncoder(
             d_dual=(d_model, d_model),
@@ -309,6 +230,11 @@ class DoubleTrans(object):
                 fake_source, bimodal_21 = self.g21(target)
         return fake_source, fake_target, bimodal_12, bimodal_21
 
+    def get_loss(self):
+        loss = np.mean(self.loss_history)
+        self.loss_history = []
+        return loss
+    
     def train(self, source, target):
         self.g12.train()
         self.g21.train()
@@ -327,6 +253,7 @@ class DoubleTrans(object):
         reconst_target, _ = self.g12(fake_source)
         g_loss2 = torch.mean((target - reconst_target) ** 2)
         g_loss = self.alpha * g_loss1 + (1 - self.alpha) * g_loss2
+        self.loss_history.append(g_loss.item())
         g_loss.backward(retain_graph=True)
         self.grad_step()
 

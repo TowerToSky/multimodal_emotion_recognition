@@ -145,54 +145,8 @@ def plot_res(subject_acc, cfg, save_dir=None):
 import numpy as np
 
 
-class Myreport:
-    def __init__(self):
-        self.__confusion = None
 
-    def __statistics_confusion(self, y_true, y_predict, num_cls=5):
-        self.__confusion = np.zeros((num_cls, num_cls))
-        for i in range(y_true.shape[0]):
-            self.__confusion[y_predict[i]][y_true[i]] += 1
-
-    def __cal_Acc(self):
-        return np.sum(self.__confusion.diagonal()) / np.sum(self.__confusion)
-
-    def __cal_Pc(self):
-        return self.__confusion.diagonal() / np.sum(self.__confusion, axis=1)
-
-    def __cal_Rc(self):
-        return self.__confusion.diagonal() / np.sum(self.__confusion, axis=0)
-
-    def __cal_F1score(self, PC, RC):
-        return 2 * np.multiply(PC, RC) / (PC + RC)
-
-    def report(self, y_true, y_predict, classNames):
-        self.__statistics_confusion(y_true, y_predict)
-        Acc = self.__cal_Acc()
-        Pc = self.__cal_Pc()
-        Rc = self.__cal_Rc()
-        F1score = self.__cal_F1score(Pc, Rc)
-        str = "Class Name\t\tprecision\t\trecall\t\tf1-score\n"
-        for i in range(len(classNames)):
-            str += (
-                f"{classNames[i]}   \t\t\t{format(Pc[i],'.2f')}   \t\t\t{format(Rc[i],'.2f')}"
-                f"   \t\t\t{format(F1score[i],'.2f')}\n"
-            )
-        str += f"accuracy is {format(Acc,'.2f')}"
-        return str
-
-    def report_F1score(self, cm):
-        if isinstance(cm, torch.Tensor):
-            self.__confusion = cm.cpu().numpy()
-        else:
-            self.__confusion = np.array(cm)
-        Pc = self.__cal_Pc()
-        Rc = self.__cal_Rc()
-        F1score = self.__cal_F1score(Pc, Rc)
-        return F1score
-
-
-# 新添加的一些小utiles
+# 新添加的一些小utils
 def find_nearest_folder(path):
     """
     循环判断路径是否是文件夹，如果不是则找到其上一级路径。
@@ -275,6 +229,8 @@ def history2df(history):
     acc_vals = [data["acc"] for data in history.values()]
     loss_vals = [data["loss"] for data in history.values()]
     f1_vals = [data["f1-score"] for data in history.values()]
+    macro_auc_vals = [data["macro_auc"] for data in history.values()]
+    micro_auc_vals = [data["micro_auc"] for data in history.values()]
 
     for subject, data in history.items():
         cm_str = ",".join(map(str, data["cm"].flatten()))
@@ -285,7 +241,8 @@ def history2df(history):
                 data["acc"],
                 data["loss"],
                 data["f1-score"],
-
+                data["macro_auc"],
+                data["micro_auc"],
                 cm_str,
             ]
         )
@@ -298,6 +255,8 @@ def history2df(history):
             np.mean(acc_vals),
             np.mean(loss_vals),
             np.mean(f1_vals),
+            np.mean(macro_auc_vals),
+            np.mean(micro_auc_vals),
             None,
         ]
     )
@@ -308,13 +267,15 @@ def history2df(history):
             np.std(acc_vals),
             np.std(loss_vals),
             np.std(f1_vals),
+            np.std(macro_auc_vals),
+            np.std(micro_auc_vals),
             None,
         ]
     )
 
     # 创建DataFrame
     history_df = pd.DataFrame(
-        rows, columns=["subject", "epoch", "acc", "loss", "f1-score", "cm"]
+        rows, columns=["subject", "epoch", "acc", "loss", "f1-score","macro_auc","micro_auc", "cm"]
     )
     return history_df
 
@@ -342,6 +303,14 @@ def save_history(config, data_name, timestamp, history):
     cm_total = np.sum(cm_series.values, axis=0)  # 高效地计算总混淆矩阵
     cm_str = np.array2string(cm_total, separator=",")
 
+    # 合并所有的macro_auc和micro_auc
+    macro_auc = metric_df["macro_auc"].dropna().values
+    micro_auc = metric_df["micro_auc"].dropna().values
+    macro_auc_mean = np.mean(macro_auc)
+    macro_auc_std = np.std(macro_auc)
+    micro_auc_mean = np.mean(micro_auc)
+    micro_auc_std = np.std(micro_auc)
+
     # 格式化 acc 和 f1-score
     metric_df = metric_df.drop(columns=["epoch", "loss", "cm"]).set_index("subject").T
     metric_df = metric_df.applymap(lambda x: f"{x:.4f}")
@@ -361,7 +330,17 @@ def save_history(config, data_name, timestamp, history):
     # 修改mean为acc/std，std为f1/std
     config_df = config_df.rename(columns={"Mean": "Acc/Std", "Std": "F1/Std"})
 
+    # 添加macro_auc和micro_auc
+    config_df["macro_auc"] = f"{macro_auc_mean:.4f}/{macro_auc_std:.4f}"
+    config_df["micro_auc"] = f"{micro_auc_mean:.4f}/{micro_auc_std:.4f}"
     config_df["cm"] = cm_str
+
+    # 打印最终结果
+    print(f"\tAcc/Std: {config_df['Acc/Std'].values[0]}\n\
+        F1/Std: {config_df['F1/Std'].values[0]}\n\
+        Macro AUC: {config_df['macro_auc'].values[0]}\n\
+        Micro AUC: {config_df['micro_auc'].values[0]}\n\
+        Confusion Matrix: {cm_str}")
 
     # 保存历史数据
     history_files = [

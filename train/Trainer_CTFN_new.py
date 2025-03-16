@@ -76,6 +76,7 @@ class Trainer:
         self.logger = logger or TensorBoardLogger()
 
         self.data_config = config["data"]
+        self.ch_nums = self.data_config["ch_nums"]
         self.model_config = config["model"]
         self.train_config = config["training"]
         self.metrics = Metrics(config["num_classes"])
@@ -94,16 +95,21 @@ class Trainer:
 
     def _log_metrics(
         self,
-        epoch,
-        avg_train_loss,
-        train_acc,
-        train_f1,
-        avg_test_loss,
-        test_acc,
-        test_f1,
+        metric_dict: dict,
         test_person=0,
     ):
         """统一日志记录"""
+        epoch = metric_dict["epoch"]
+        avg_train_loss = metric_dict["avg_train_loss"]
+        train_acc = metric_dict["train_acc"]
+        train_f1 = metric_dict["train_f1"]
+        avg_test_loss = metric_dict["avg_test_loss"]
+        test_acc = metric_dict["test_acc"]
+        test_f1 = metric_dict["test_f1"]
+        g_loss = metric_dict["g_loss"]
+        macro_auc = metric_dict["macro_auc"]
+        micro_auc = metric_dict["micro_auc"]
+
         if self.logger:
             log_data = {
                 f"person_{test_person}train/loss": avg_train_loss,
@@ -112,6 +118,9 @@ class Trainer:
                 f"person_{test_person}test/loss": avg_test_loss,
                 f"person_{test_person}test/accuracy": test_acc,
                 f"person_{test_person}test/f1-score": test_f1,
+                f"person_{test_person}g_loss": g_loss,
+                f"person_{test_person}macro_auc": macro_auc,
+                f"person_{test_person}micro_auc": micro_auc,
             }
             for metric, value in log_data.items():
                 self.logger.log_scalar(metric, value, epoch + 1)
@@ -119,7 +128,8 @@ class Trainer:
         self.logger.info(
             f"Person {test_person}: Epoch {epoch+1}: "
             f"Train Loss={avg_train_loss:.4f}, Train Acc={train_acc:.4f}, Train F1={train_f1:.4f}, "
-            f"Val Loss={avg_test_loss:.4f}, Val Acc={test_acc:.4f}, Val F1={test_f1:.4f}"
+            f"Val Loss={avg_test_loss:.4f}, Val Acc={test_acc:.4f}, Val F1={test_f1:.4f}, G Loss={g_loss:.4f}, "
+            f"Macro AUC={macro_auc:.4f}, Micro AUC={micro_auc:.4f}"
         )
 
     def load_model(self, test_person=0):
@@ -136,9 +146,9 @@ class Trainer:
             self.msafesm_model.load_state_dict(
                 torch.load(checkpoint_path)["model_state_dict"]
             )
-            # self.msafesm_model.eval()
-            # for param in self.msafesm_model.parameters():
-            #     param.requires_grad = False
+            self.msafesm_model.eval()
+            for param in self.msafesm_model.parameters():
+                param.requires_grad = False
         else:
             # 冻结ctfn
             checkpoint_path = os.path.join(
@@ -152,7 +162,8 @@ class Trainer:
             pretrain_ctfn = pretrain_ctfn[1]
             for model, pretrain_model in zip(self.ctfn, pretrain_ctfn):
                 model.load_models(pretrain_model)
-                # model.freeze()
+                model.freeze()
+            # print("No need to load model")
 
     def train_step(self, inputs, targets, adj=None, graph_indicator=None):
         """训练步骤
@@ -172,15 +183,15 @@ class Trainer:
         eeg, eye, au = self._process_input(inputs)
         targets = targets.to(self.device)
         if eeg is None:
-            eeg = torch.zeros((len(targets), 32, self.data_config["input_dim"])).to(
-                self.device
-            )
+            eeg = torch.zeros(
+                (len(targets), self.ch_nums, self.data_config["input_dim"])
+            ).to(self.device)
         # 计算逻辑
         extract_features = self.msafesm_model.feature_extract(
             adj, graph_indicator, eeg, eye, au
         )
-        align_featues = self.msafesm_model.feature_align(extract_features)
-        brain, eye_track, face = align_featues
+        align_features = self.msafesm_model.feature_align(extract_features)
+        brain, eye_track, face = align_features
 
         b2e_model = self.ctfn[0]
         b2f_model = self.ctfn[1]
@@ -245,15 +256,15 @@ class Trainer:
             eeg, eye, au = self._process_input(inputs)
             targets = targets.to(self.device)
             if eeg is None:
-                eeg = torch.zeros((len(targets), 32, self.data_config["input_dim"])).to(
-                    self.device
-                )
+                eeg = torch.zeros(
+                    (len(targets), self.ch_nums, self.data_config["input_dim"])
+                ).to(self.device)
 
             extract_features = self.msafesm_model.feature_extract(
                 adj, graph_indicator, eeg, eye, au
             )
-            align_featues = self.msafesm_model.feature_align(extract_features)
-            brain, eye_track, face = align_featues
+            align_features = self.msafesm_model.feature_align(extract_features)
+            brain, eye_track, face = align_features
 
             b2e_model = self.ctfn[0]
             b2f_model = self.ctfn[1]
@@ -261,15 +272,15 @@ class Trainer:
 
             if self.train_config["stage"] == 1:
                 b2e_fake_b, b2e_fake_e, bimodal_be, bimodal_eb, fusion_be = (
-                    b2e_model.double_fusion_se(brain, eye_track, need_grad=True)
+                    b2e_model.double_fusion_se(brain, eye_track, need_grad=False)
                 )
 
                 b2f_fake_b, b2f_fake_f, bimodal_bf, bimodal_fb, fusion_bf = (
-                    b2f_model.double_fusion_se(brain, face, need_grad=True)
+                    b2f_model.double_fusion_se(brain, face, need_grad=False)
                 )
 
                 e2f_fake_e, e2f_fake_f, bimodal_ef, bimodal_fe, fusion_ef = (
-                    e2f_model.double_fusion_se(eye_track, face, need_grad=True)
+                    e2f_model.double_fusion_se(eye_track, face, need_grad=False)
                 )
             else:
                 b2e_brain, bimodal_eb = b2e_model.g21(eye_track)
@@ -316,9 +327,12 @@ class Trainer:
         best_test_results = {
             "acc": 0.0,
             "loss": float("inf"),
-            "f1-socre": 0.0,
+            "f1-score": 0.0,
             "cm": None,
             "epoch": 0,
+            "g-loss": float("inf"),
+            "macro_auc": 0.0,
+            "micro_auc": 0.0,
         }
         data_config = self.data_config
 
@@ -368,24 +382,48 @@ class Trainer:
             # 计算混淆矩阵
             conf_matrix = self.metrics.get_confusion_matrix()
 
+            # 计算macro auc 与 micro auc
+            macro_auc, micro_auc = self.metrics.get_auc()
+
+            # 获取g_loss
+            if self.train_config["stage"] == 1:
+                g_loss = (
+                    self.ctfn[0].get_loss()
+                    + self.ctfn[1].get_loss()
+                    + self.ctfn[2].get_loss()
+                ) / 3.0
+            else:
+                g_loss = 0.0
+
             # Scheduler step (optional)
             if self.scheduler:
                 self.scheduler.step(avg_test_loss)
 
+            # Log to console
+            metrics_dict = {
+                "epoch": epoch,
+                "avg_train_loss": avg_train_loss,
+                "train_acc": train_acc,
+                "train_f1": train_f1,
+                "avg_test_loss": avg_test_loss,
+                "test_acc": test_acc,
+                "test_f1": test_f1,
+                "g_loss": g_loss,
+                "macro_auc": macro_auc,
+                "micro_auc": micro_auc,
+            }
+
             # Log to TensorBoard
             self._log_metrics(
-                epoch,
-                avg_train_loss,
-                train_acc,
-                train_f1,
-                avg_test_loss,
-                test_acc,
-                test_f1,
-                test_person,
+                metrics_dict,
+                test_person=test_person,
             )
 
-            # Save checkpoint if testidation loss improves
-            if best_test_results["acc"] <= test_acc and test_f1 > 0.0:
+            # Save checkpoint if test loss improves
+            if (best_test_results["acc"] < test_acc and test_f1 > 0.0) or (
+                best_test_results["acc"] == test_acc
+                and best_test_results["g-loss"] >= g_loss
+            ):
                 best_test_results.update(
                     {
                         "acc": test_acc,
@@ -393,12 +431,15 @@ class Trainer:
                         "f1-score": test_f1,
                         "cm": conf_matrix,
                         "epoch": epoch,
+                        "g-loss": g_loss,
+                        "macro_auc": macro_auc,
+                        "micro_auc": micro_auc,
                     }
                 )
                 self.history[test_person] = copy.deepcopy(best_test_results)
 
                 self.logger.info(
-                    f"Person {test_person} best test acc: {test_acc:.4f}, test loss: {avg_test_loss:.4f}, f1 score: {test_f1:.4f}"
+                    f"Person {test_person} best test acc: {test_acc:.4f}, test loss: {avg_test_loss:.4f}, f1 score: {test_f1:.4f}, epoch: {epoch}, g_loss: {g_loss:.4f}, macro auc: {macro_auc:.4f}, micro auc: {micro_auc:.4f}"
                 )
                 self.save_checkpoint(
                     Path(self.logger.log_path).parent
@@ -408,7 +449,7 @@ class Trainer:
 
         # 打印最终结果
         self.logger.info(
-            f"Person {test_person} final best test acc: {best_test_results['acc']:.4f}, test loss: {best_test_results['loss']:.4f}, f1 score: {best_test_results['f1-socre']:.4f}, epoch: {best_test_results['epoch']}"
+            f"Person {test_person} final best test acc: {best_test_results['acc']:.4f}, test loss: {best_test_results['loss']:.4f}, f1 score: {best_test_results['f1-score']:.4f}, epoch: {best_test_results['epoch']}, g_loss: {best_test_results['g-loss']:.4f}, macro auc: {best_test_results['macro_auc']:.4f}, micro auc: {best_test_results['micro_auc']:.4f}"
         )
 
         # 打印混淆矩阵
@@ -438,3 +479,95 @@ class Trainer:
         self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
         # Optionally load other information like epoch and history
         return checkpoint.get("epoch", 0)
+    
+
+    def infer(self, test_person=0,):
+        """
+        和test逻辑一样，但是多了加载checkpoints的逻辑
+        """
+        self.logger.info("Start inference...")
+        batch_size = self.test_loader.batch_size
+        best_test_results = {
+            "acc": 0.0,
+            "loss": float("inf"),
+            "f1-score": 0.0,
+            "cm": None,
+            "epoch": 0,
+            "g_loss": float("inf"),
+            "macro_auc": 0.0,
+            "micro_auc": 0.0,
+        }
+        data_config = self.data_config
+
+        self.load_model(test_person)
+
+        # 初始化图数据
+        adj, graph_indicator = initialize_graph(
+            data_config, batch_size, self.device
+        )
+        # Testing loop
+        self.metrics.reset()
+        for inputs, targets in tqdm(
+            self.test_loader, desc=f"Person {test_person} - Inference"
+        ):
+            if len(targets) != graph_indicator[-1] - 1:
+                adj, graph_indicator = initialize_graph(
+                    data_config, len(targets), self.device
+                )
+            self.test_step(inputs, targets, adj, graph_indicator)
+
+        # 计算平均验证损失、准确率和 F1-Score
+        avg_test_loss, test_acc, test_f1 = self.metrics.average_metrics(
+            len(self.test_loader)
+        )
+
+        # 计算混淆矩阵
+        conf_matrix = self.metrics.get_confusion_matrix()
+
+        # 计算macro auc 与 micro auc
+        macro_auc, micro_auc = self.metrics.get_auc()
+
+        # Log to console
+        metrics_dict = {
+            "epoch": 0,
+            "avg_train_loss": 0,
+            "train_acc": 0,
+            "train_f1": 0,
+            "avg_test_loss": avg_test_loss,
+            "test_acc": test_acc,
+            "test_f1": test_f1,
+            "g_loss": 0,
+            "macro_auc": macro_auc,
+            "micro_auc": micro_auc,
+        }
+
+        # Log to TensorBoard
+        self._log_metrics(
+            metrics_dict,
+            test_person=test_person,
+        )
+
+        # 更新最佳结果
+        best_test_results.update(
+            {
+                "acc": test_acc,
+                "loss": avg_test_loss,
+                "f1-score": round(test_f1, 4),
+                "cm": conf_matrix,
+                "epoch": 0,
+                "g_loss": 0,
+                "macro_auc": macro_auc,
+                "micro_auc": micro_auc,
+            }
+        )
+        self.history[test_person] = copy.deepcopy(best_test_results)
+
+        # 打印最终结果
+        self.logger.info(
+            f"Person {test_person} final best test acc: {best_test_results['acc']:.4f}, test loss: {best_test_results['loss']:.4f}, f1 score: {best_test_results['f1-score']:.4f}, epoch: {best_test_results['epoch']}, macro auc: {best_test_results['macro_auc']:.4f}, micro auc: {best_test_results['micro_auc']:.4f}"
+        )
+
+        # 打印混淆矩阵
+        self.logger.info(
+            f"Person {test_person} final best test confusion matrix: \n{best_test_results['cm']}"
+        )
