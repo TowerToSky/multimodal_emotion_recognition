@@ -36,15 +36,11 @@
 
 1. 预处理数据：
    ```bash
-   python src/data_processing/preprocess.py --input data/raw --output data/processed
+   raw_data_process\hci\hci_data_process.ipynb
    ```
 2. 训练模型：
    ```bash
-   python src/model/train.py --config configs/train_config.yaml
-   ```
-3. 评估模型：
-   ```bash
-   python src/model/evaluate.py --model models/best_model.pth --data data/processed
+   python main --config config/config.yaml
    ```
 
 ## Dataset
